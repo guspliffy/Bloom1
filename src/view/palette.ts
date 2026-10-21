@@ -1,8 +1,13 @@
-/** Dusk garden palette. Fullness reads cool to warm: 1 petal lavender, 2 rose, 3 amber (ready). */
+/** Dusk garden palette. Colour means state, not count: cool lavender while filling, warm amber when ready. */
+const petalIdle = 0xb4a7ff;
+const petalReady = 0xffc27a;
+const core = 0xfff4d6;
+
 export const palette = {
-  tileFill: 0xffffff,
-  petalByCount: [0xffffff, 0xa99cff, 0xff9ccf, 0xffc27a],
-  core: 0xfff4d6,
+  petalIdle,
+  petalReady,
+  petalByCount: [core, petalIdle, petalIdle, petalReady],
+  core,
   arrow: 0xf3ecff,
   ready: 0xffb760,
   /** Open-flower hues walk along a chain, one per bloom. */

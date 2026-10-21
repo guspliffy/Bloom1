@@ -42,11 +42,11 @@ export function tutorialLessons(): Lesson[] {
       return b;
     },
     hint: [center],
-    say: 'Tap the circled bud to water it. Each tap adds one petal.',
+    say: 'Tap the circled bud.',
     judge: (r) => {
-      if (r.bloomed.length > 0) return { outcome: 'pass', say: 'Four petals: it blooms!' };
+      if (r.bloomed.length > 0) return { outcome: 'pass', say: 'Four petals. It blooms!' };
       const n = r.petals[r.tapped];
-      return { outcome: 'continue', say: `${n} of 4 petals. ${n === 3 ? 'One more and it blooms.' : 'Keep tapping.'}` };
+      return { outcome: 'continue', say: n === 3 ? '3 of 4. One more!' : `${n} of 4.` };
     },
   };
 
@@ -61,11 +61,11 @@ export function tutorialLessons(): Lesson[] {
       return b;
     },
     hint: [center],
-    say: 'A glowing bud has 3 petals, one tap from blooming. Its arrows show where its petals will fly. Tap it.',
+    say: 'A glowing bud is ready. Tap it.',
     judge: (r) =>
       r.bloomed.length > 0
-        ? { outcome: 'pass', say: 'Each arrow carried a petal to a neighbor.' }
-        : { outcome: 'continue', say: 'That bud got a petal. Now tap the glowing one in the middle.' },
+        ? { outcome: 'pass', say: 'Its petals flew along the arrows.' }
+        : { outcome: 'continue', say: 'Tap the glowing one.' },
   };
 
   const left = at1(-1, 0);
@@ -81,11 +81,11 @@ export function tutorialLessons(): Lesson[] {
       return b;
     },
     hint: [left],
-    say: 'When a petal lands on a glowing bud, that bud blooms too. Tap the circled bud and watch.',
+    say: 'Tap the circled bud. Watch the chain.',
     judge: (r) => {
-      if (r.bloomed.length >= 3) return { outcome: 'pass', say: `A chain of ${r.bloomed.length}! Every bloom plays the next note.` };
-      if (r.bloomed.length > 0) return { outcome: 'retry', say: `Only ${r.bloomed.length}. Start from the circled bud so its arrow hits the next one.` };
-      return { outcome: 'continue', say: 'Tap the circled bud: its arrow points at a glowing neighbor.' };
+      if (r.bloomed.length >= 3) return { outcome: 'pass', say: `A chain of ${r.bloomed.length}. Each bloom sings.` };
+      if (r.bloomed.length > 0) return { outcome: 'retry', say: `Only ${r.bloomed.length}. Start from the circled bud.` };
+      return { outcome: 'continue', say: 'Tap the circled bud.' };
     },
   };
 
@@ -110,12 +110,12 @@ export function tutorialLessons(): Lesson[] {
       return b;
     },
     hint: [],
-    say: 'Glowing buds need just one more petal. Follow the arrows and find a tap that blooms 4 or more.',
+    say: 'Find a tap that blooms 4 or more.',
     judge: (r) => {
       const n = r.bloomed.length;
-      if (n >= 4) return { outcome: 'pass', say: `${n} blooms! Its arrows pointed into glowing buds. That is the whole game.` };
-      if (n > 0) return { outcome: 'retry', say: `Only ${n}. Look for a glowing bud whose arrows point at other glowing buds.` };
-      return { outcome: 'continue', say: 'That bud just got a petal. Tap one of the glowing buds.' };
+      if (n >= 4) return { outcome: 'pass', say: `${n} blooms! That is the whole game.` };
+      if (n > 0) return { outcome: 'retry', say: `Only ${n}. Whose arrows hit glowing buds?` };
+      return { outcome: 'continue', say: 'Tap a glowing bud.' };
     },
   };
 

@@ -67,24 +67,20 @@ async function boot(): Promise<void> {
       /* storage unavailable */
     }
   });
-  document.getElementById('btn-new')!.addEventListener('click', () => game.newRun());
-  document.getElementById('btn-help')!.addEventListener('click', () => hud.showHowto());
-  document.getElementById('btn-start')!.addEventListener('click', () => {
-    synth.unlock();
-    hud.hideHowto();
-    hud.toast('Tip: start from a glowing bud whose arrows point at other glowing buds.', 5000);
-  });
-  document.getElementById('btn-tutorial')!.addEventListener('click', () => {
-    synth.unlock();
-    game.startTutorial();
-  });
-  document.getElementById('btn-again')!.addEventListener('click', () => {
-    synth.unlock();
-    game.newRun();
-  });
+  const button = (id: string, fn: () => void) =>
+    document.getElementById(id)!.addEventListener('click', () => {
+      synth.unlock();
+      fn();
+    });
+  button('btn-help', () => hud.showHowto());
+  button('btn-back', () => hud.hideHowto());
+  button('btn-tutorial', () => game.startTutorial());
+  button('btn-new', () => game.newRun());
+  button('btn-again', () => game.newRun());
   const fullBtn = document.getElementById('btn-full')!;
-  if (!document.documentElement.requestFullscreen) fullBtn.style.display = 'none';
-  fullBtn.addEventListener('click', () => {
+  if (!document.fullscreenEnabled || matchMedia('(pointer: coarse)').matches) fullBtn.style.display = 'none';
+  button('btn-full', () => {
+    hud.hideHowto();
     if (document.fullscreenElement) void document.exitFullscreen();
     else void document.documentElement.requestFullscreen().catch(() => {});
   });

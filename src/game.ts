@@ -1,6 +1,7 @@
 import { chainStep, type Synth } from './audio/synth';
 import { resolveTap } from './core/rules';
 import { Run } from './core/run';
+import { bestSingleTap } from './core/solver';
 import { tutorialLessons, type Lesson } from './core/tutorial';
 import type { Bud } from './core/rules';
 import type { Hud } from './hud';
@@ -10,6 +11,7 @@ import type { Tweener } from './view/tween';
 
 const TUTORIAL_KEY = 'bloom.tutorialDone.v2';
 const BEST_KEY = 'bloom.best';
+const FIRST_RUN_KEY = 'bloom.firstRunDone';
 
 function store(key: string, value?: string): string | null {
   try {
@@ -31,6 +33,7 @@ export class Game {
   /** Bumped on every new garden so continuations from an abandoned chain stop quietly. */
   private epoch = 0;
   private fixedSeed: number | null;
+  private idleTimer = 0;
 
   constructor(
     private garden: GardenView,
@@ -83,6 +86,7 @@ export class Game {
     this.busy = false;
     this.tw.clear();
     this.hud.hideSummary();
+    this.hud.hideHowto();
     const seed = this.fixedSeed ?? (Math.random() * 2 ** 32) >>> 0;
     this.run = new Run(tuning, seed);
     this.lessons = [];
@@ -93,8 +97,21 @@ export class Game {
     this.hud.setStatsVisible(true);
     this.hud.setDrops(this.run.drops);
     this.hud.setPollen(0);
-    this.hud.setMood(this.run.adapter.mood);
     this.relayout();
+    this.hud.toast('Tap a glowing bud.');
+    this.armIdleHint();
+  }
+
+  /** First real run only: after a quiet spell, circle the best bud so the first minute explains itself. */
+  private armIdleHint(): void {
+    clearTimeout(this.idleTimer);
+    if (store(FIRST_RUN_KEY) === '1') return;
+    const run = this.run;
+    this.idleTimer = window.setTimeout(() => {
+      if (!run || run !== this.run || run.ended || this.busy) return;
+      const best = bestSingleTap(run.board, run.buds);
+      if (best.cell >= 0) this.garden.hintCells = [best.cell];
+    }, tuning.feel.idleHintMs);
   }
 
   private async tap(cell: number): Promise<void> {
@@ -106,6 +123,8 @@ export class Game {
 
     const epoch = this.epoch;
     this.busy = true;
+    clearTimeout(this.idleTimer);
+    this.garden.hintCells = [];
     const out = run.tap(cell);
     const n = out.result.bloomed.length;
     this.garden.tapFeedback(cell);
@@ -134,9 +153,11 @@ export class Game {
       if (epoch !== this.epoch) return;
     }
     this.garden.sync(run.buds);
-    this.hud.setMood(run.adapter.mood);
     this.busy = false;
-    if (out.ended) await this.finish(run, epoch);
+    if (out.ended) {
+      store(FIRST_RUN_KEY, '1');
+      await this.finish(run, epoch);
+    } else this.armIdleHint();
   }
 
   private bloomHooks() {
@@ -175,7 +196,6 @@ export class Game {
     if (this.inTutorial) return this.showLesson();
     store(TUTORIAL_KEY, '1');
     this.newRun();
-    this.hud.showHowto();
   }
 
   private async finish(run: Run, epoch: number): Promise<void> {
@@ -191,8 +211,6 @@ export class Game {
       newBest: newBest && prev > 0,
       longest: run.longest,
       blooms: run.totalBlooms,
-      taps: run.taps,
-      efficiency: run.adapter.efficiency(),
     });
   }
 }

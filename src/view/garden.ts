@@ -6,6 +6,8 @@ import { tuning } from '../tuning';
 import { BudView, drawPetal } from './budView';
 import { palette } from './palette';
 import { glowTexture } from './textures';
+
+const FINE_POINTER = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
 import { ease, type Tweener } from './tween';
 
 export interface PlayHooks {
@@ -72,21 +74,31 @@ export class GardenView extends Container {
   }
 
   tick(dtMs: number): void {
+    const f = tuning.feel;
     this.time += dtMs / 1000;
-    const pulse = 0.5 + 0.5 * Math.sin(this.time * Math.PI * 2 * tuning.feel.readyPulseHz);
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * Math.PI * 2 * f.readyPulseHz);
     for (let i = 0; i < this.buds.length; i++) {
       const v = this.buds[i];
-      const target = !v.isOpen && v.petals >= MAX_PETALS ? 0.18 + 0.22 * pulse : 0;
-      v.halo.alpha += (target - v.halo.alpha) * Math.min(1, dtMs / 120);
+      const ready = v.ready;
+      v.halo.alpha += ((ready ? 0.22 + 0.22 * pulse : 0) - v.halo.alpha) * Math.min(1, dtMs / 120);
+      v.petalsG.scale.set(ready ? 1 + f.readyBreathe * pulse : 1);
+
       const hinted = !v.isOpen && this.hintCells.includes(i);
       if (hinted) {
         const p = (this.time * 0.9) % 1;
         v.hintRing.alpha = 0.7 * (1 - p);
         v.hintRing.scale.set(0.7 + p * 0.6);
       } else v.hintRing.alpha = 0;
-      if (!v.isOpen) v.arrowsG.alpha = hinted && this.highlightArrows ? 0.55 + 0.45 * pulse : Math.min(1, v.arrowsG.alpha + dtMs / 300);
+
+      // Arrow heads: amber on ready buds, faint on a hovered bud (desktop only), otherwise hidden.
+      const hover = !ready && !v.isOpen && v.hovered && FINE_POINTER;
+      const target = ready ? 0.9 : hover ? 0.4 : 0;
+      const rate = target > v.arrowsG.alpha ? (ready ? 180 : f.arrowRevealMs) : 200;
+      const step = (dtMs / Math.max(1, rate)) * Math.max(target, 0.4);
+      v.arrowsG.alpha = target > v.arrowsG.alpha ? Math.min(target, v.arrowsG.alpha + step) : Math.max(target, v.arrowsG.alpha - step);
+      if (ready) v.arrowsG.tint = palette.petalReady;
+      else if (hover) v.arrowsG.tint = palette.arrow;
       v.arrowsG.scale.set(hinted && this.highlightArrows ? 1 + 0.12 * pulse : 1);
-      v.arrowsG.tint = hinted && this.highlightArrows ? palette.ready : 0xffffff;
     }
   }
 

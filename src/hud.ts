@@ -8,15 +8,12 @@ export interface Summary {
   newBest: boolean;
   longest: number;
   blooms: number;
-  taps: number;
-  efficiency: number | null;
 }
 
 /** DOM overlay: counters, chain banner, toasts, floating numbers and the end-of-run card. */
 export class Hud {
   private drops = $('drops');
   private pollen = $('pollen');
-  private mood = $('mood');
   private chain = $('chain');
   private toastEl = $('toast');
   private summary = $('summary');
@@ -30,7 +27,7 @@ export class Hud {
   private toastHide = 0;
 
   setStatsVisible(v: boolean): void {
-    for (const el of [this.drops, this.pollen, this.mood]) el.style.visibility = v ? 'visible' : 'hidden';
+    for (const el of [this.drops, this.pollen]) el.style.visibility = v ? 'visible' : 'hidden';
   }
 
   setDrops(n: number, pop = false): void {
@@ -59,10 +56,6 @@ export class Hud {
     this.pop(this.pollen);
   }
 
-  setMood(m: string): void {
-    this.mood.textContent = m;
-  }
-
   /** Chain banner, shown from the second bloom of a chain. */
   setChain(n: number): void {
     clearTimeout(this.chainHide);
@@ -77,7 +70,7 @@ export class Hud {
     this.chainHide = window.setTimeout(() => this.chain.classList.remove('show'), 900);
   }
 
-  toast(text: string, ms = 3500): void {
+  toast(text: string, ms = tuning.feel.toastMs): void {
     clearTimeout(this.toastHide);
     this.toastEl.textContent = text;
     this.toastEl.classList.add('show');
@@ -104,8 +97,6 @@ export class Hud {
     $('sum-pollen').textContent = String(s.pollen);
     $('sum-longest').textContent = String(s.longest);
     $('sum-blooms').textContent = String(s.blooms);
-    $('sum-taps').textContent = String(s.taps);
-    $('sum-eff').textContent = s.efficiency === null ? '–' : `${Math.round(s.efficiency * 100)}%`;
     const best = $('sum-best');
     best.textContent = s.newBest ? 'A new best garden' : `Best: ${s.best}`;
     best.classList.toggle('new', s.newBest);

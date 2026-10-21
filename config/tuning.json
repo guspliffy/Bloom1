@@ -36,6 +36,10 @@
     "sproutDelayMs": 260,
     "sproutMs": 420,
     "readyPulseHz": 0.8,
+    "readyBreathe": 0.03,
+    "arrowRevealMs": 120,
+    "idleHintMs": 8000,
+    "toastMs": 2600,
     "floatTextMs": 1300,
     "vibrateMs": 8
   },
