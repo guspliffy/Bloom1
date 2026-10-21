@@ -61,7 +61,7 @@ export class BudView extends Container {
     }
     this.tile.clear().poly(hex).fill({ color: palette.tileFill, alpha: 0.035 }).stroke({ width: 1, color: palette.tileFill, alpha: 0.07 });
     this.halo.width = this.halo.height = s * 2.6;
-    this.hintRing.clear().circle(0, 0, s * 0.78).stroke({ width: Math.max(1.5, s * 0.05), color: 0xffffff, alpha: 0.8 });
+    this.hintRing.clear().circle(0, 0, s * 0.92).stroke({ width: Math.max(1.5, s * 0.05), color: 0xffffff, alpha: 0.8 });
     this.hintRing.alpha = 0;
     this.drawPetals();
   }

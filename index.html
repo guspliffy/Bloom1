@@ -23,6 +23,7 @@
         <div class="stat pollen" id="pollen"><span class="value">0</span><span class="label">pollen</span></div>
         <div class="mood" id="mood" title="How wild the next sprouts are">Lively</div>
       </div>
+      <div class="coach" id="coach"><div class="steps" id="coach-steps"></div><p id="coach-text"></p></div>
       <div class="chain" id="chain"><span class="n">0</span><span class="label">blooms</span></div>
       <div class="toast" id="toast"></div>
       <div class="bottom">
@@ -33,9 +34,26 @@
           <svg viewBox="0 0 24 24" class="on"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" /></svg>
           <svg viewBox="0 0 24 24" class="off"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="m16.5 9.5 5 5m0-5-5 5" /></svg>
         </button>
+        <button id="btn-help" aria-label="How to play" title="How to play">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6" /><circle cx="12" cy="17" r=".6" fill="currentColor" /></svg>
+        </button>
         <button id="btn-full" aria-label="Full screen" title="Full screen">
           <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
         </button>
+      </div>
+      <div class="overlay hidden" id="howto">
+        <div class="card howto">
+          <h1>How to play</h1>
+          <ul>
+            <li><b>Tap a bud</b> to give it a petal. Each tap uses one <span class="drop-word">drop</span>.</li>
+            <li>At <b>4 petals</b> it blooms and sends a petal along each of its <b>arrows</b>.</li>
+            <li><b>Glowing</b> buds have 3 petals. A petal landing there makes them bloom too, so chains run across the garden.</li>
+            <li>Chains of <b>4+</b> give a drop back, <b>8+</b> two, <b>12+</b> three. Longer chains score far more pollen.</li>
+            <li>When your drops run out, the garden rests. Plan the longest chains you can.</li>
+          </ul>
+          <button id="btn-start" class="primary">Start</button>
+          <button id="btn-tutorial" class="secondary">Replay the tutorial</button>
+        </div>
       </div>
       <div class="overlay hidden" id="summary">
         <div class="card">

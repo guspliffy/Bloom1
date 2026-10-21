@@ -20,6 +20,10 @@ export class Hud {
   private chain = $('chain');
   private toastEl = $('toast');
   private summary = $('summary');
+  private howto = $('howto');
+  private coachEl = $('coach');
+  private coachText = $('coach-text');
+  private coachSteps = $('coach-steps');
   private shownPollen = 0;
   private pollenAnim = 0;
   private chainHide = 0;
@@ -110,6 +114,35 @@ export class Hud {
 
   hideSummary(): void {
     this.summary.classList.add('hidden');
+  }
+
+  /** Tutorial coach line at the top, with progress dots. */
+  coach(text: string, step: number, total: number): void {
+    this.coachSteps.innerHTML = Array.from({ length: total }, (_, i) => `<i class="${i < step ? 'done' : i === step ? 'now' : ''}"></i>`).join('');
+    this.coachEl.classList.add('show');
+    if (this.coachText.textContent === text) return;
+    this.coachText.classList.add('swap');
+    setTimeout(() => {
+      this.coachText.textContent = text;
+      this.coachText.classList.remove('swap');
+    }, 180);
+  }
+
+  hideCoach(): void {
+    this.coachEl.classList.remove('show');
+    this.coachText.textContent = '';
+  }
+
+  showHowto(): void {
+    this.howto.classList.remove('hidden');
+  }
+
+  hideHowto(): void {
+    this.howto.classList.add('hidden');
+  }
+
+  get howtoOpen(): boolean {
+    return !this.howto.classList.contains('hidden');
   }
 
   private pop(el: HTMLElement): void {

@@ -3,7 +3,7 @@ import defaults from '../config/tuning.json';
 import { Adapter } from '../src/core/adapt';
 import { generateGarden } from '../src/core/generator';
 import { cellIndex, makeBoard } from '../src/core/hex';
-import { introGardens } from '../src/core/intro';
+import { tutorialLessons } from '../src/core/tutorial';
 import { Rng } from '../src/core/rng';
 import { chainPollen, chainRefund, resolveTap, type Bud } from '../src/core/rules';
 import { Run } from '../src/core/run';
@@ -94,8 +94,8 @@ describe('generator', () => {
 
 describe('solver and adapter', () => {
   it('finds the longest single-tap chain', () => {
-    const [, second] = introGardens();
-    expect(bestSingleTap(second.board, second.buds).blooms).toBe(3);
+    const chain = tutorialLessons()[2];
+    expect(bestSingleTap(chain.board, chain.start()).blooms).toBe(3);
   });
 
   it('good streaks make the garden wilder, poor streaks gentler, priming is neutral', () => {
@@ -113,11 +113,47 @@ describe('solver and adapter', () => {
   });
 });
 
-describe('intro', () => {
-  it('first garden blooms one bud, second chains three', () => {
-    const [first, second] = introGardens();
-    expect(resolveTap(first.board, first.buds, first.hint).bloomed.length).toBe(1);
-    expect(resolveTap(second.board, second.buds, second.hint).bloomed.length).toBe(3);
+describe('tutorial', () => {
+  const play = (i: number, q: number, r: number) => {
+    const l = tutorialLessons()[i];
+    const buds = l.start();
+    const res = resolveTap(l.board, buds, cellIndex(l.board, q, r));
+    return { res, fb: l.judge(res, buds) };
+  };
+
+  it('lesson 1 needs three taps on the circled bud', () => {
+    const l = tutorialLessons()[0];
+    let buds = l.start();
+    const outcomes: string[] = [];
+    for (let k = 0; k < 3; k++) {
+      const res = resolveTap(l.board, buds, l.hint[0]);
+      outcomes.push(l.judge(res, buds).outcome);
+      buds = buds.map((b, i) => ({ ...b, petals: res.petals[i] }));
+    }
+    expect(outcomes).toEqual(['continue', 'continue', 'pass']);
+  });
+
+  it('lesson 2 blooms one bud without chaining', () => {
+    const { res, fb } = play(1, 0, 0);
+    expect(res.bloomed.length).toBe(1);
+    expect(fb.outcome).toBe('pass');
+  });
+
+  it('lesson 3 chains three from the left bud and asks for a retry otherwise', () => {
+    expect(play(2, -1, 0).res.bloomed.length).toBe(3);
+    expect(play(2, -1, 0).fb.outcome).toBe('pass');
+    expect(play(2, 0, 0).fb.outcome).toBe('retry');
+  });
+
+  it('lesson 4: the bud pointing into full buds wins, the other blooms alone', () => {
+    const good = play(3, -1, 0);
+    expect(good.res.bloomed.length).toBeGreaterThanOrEqual(4);
+    expect(good.fb.outcome).toBe('pass');
+    const bad = play(3, 0, 2);
+    expect(bad.res.bloomed.length).toBe(1);
+    expect(bad.fb.outcome).toBe('retry');
+    const l = tutorialLessons()[3];
+    expect(l.start().filter((b) => b.petals === 3).length).toBe(5);
   });
 });
 

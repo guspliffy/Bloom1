@@ -14,11 +14,11 @@ TypeScript, Vite, PixiJS 8 (WebGL), Vitest, Web Audio (synthesized, no sound fil
 
 ## Folder map
 - `config/tuning.json`: every gameplay number. Code reads it through `src/tuning.ts`; never hardcode one.
-- `src/core/`: pure, deterministic game logic, no DOM or Pixi. `hex` board, `rules` (tap and cascade), `generator` (sprouts), `solver`, `adapt` (difficulty), `run` (one run), `intro`, `rng`.
+- `src/core/`: pure, deterministic game logic, no DOM or Pixi. `hex` board, `rules` (tap and cascade), `generator` (sprouts), `solver`, `adapt` (difficulty), `run` (one run), `tutorial` (lesson gardens and judging), `rng`.
 - `src/view/`: Pixi rendering. `garden` replays a resolved tap as an animated cascade; `budView` draws one bud; `tween` is the ticker-driven tween and wait helper.
 - `src/audio/synth.ts`: pentatonic bloom notes, tap blip, refund chime, end chord.
 - `src/hud.ts`: DOM overlay (counters, chain banner, floating numbers, summary card).
-- `src/game.ts`: flow (intro, run, summary) wiring logic, view, audio and HUD.
+- `src/game.ts`: flow (tutorial, run, summary) wiring logic, view, audio and HUD.
 - `src/dev/panel.ts`: Tweakpane tuning panel, lazy-loaded.
 - `tests/`: Vitest specs. `scripts/sim.ts`: balance bots.
 
@@ -32,4 +32,4 @@ TypeScript, Vite, PixiJS 8 (WebGL), Vitest, Web Audio (synthesized, no sound fil
 ## Conventions
 - Small modules with named exports. Comments explain why, not what.
 - Tests cover rules, generator invariants, solver, adapter and determinism. Add a test with every rule change.
-- Dev URL flags: `?dev` opens the tuning panel (or press the backquote key), `?seed=N` fixes the garden, `?intro` replays the intro.
+- Dev URL flags: `?dev` opens the tuning panel (or press the backquote key), `?seed=N` fixes the garden, `?tutorial` replays the tutorial.

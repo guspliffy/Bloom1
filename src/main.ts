@@ -68,6 +68,16 @@ async function boot(): Promise<void> {
     }
   });
   document.getElementById('btn-new')!.addEventListener('click', () => game.newRun());
+  document.getElementById('btn-help')!.addEventListener('click', () => hud.showHowto());
+  document.getElementById('btn-start')!.addEventListener('click', () => {
+    synth.unlock();
+    hud.hideHowto();
+    hud.toast('Tip: start from a glowing bud whose arrows point at other glowing buds.', 5000);
+  });
+  document.getElementById('btn-tutorial')!.addEventListener('click', () => {
+    synth.unlock();
+    game.startTutorial();
+  });
   document.getElementById('btn-again')!.addEventListener('click', () => {
     synth.unlock();
     game.newRun();
@@ -97,7 +107,12 @@ async function boot(): Promise<void> {
 
   // Read-only hook for automated play-throughs (Playwright smoke test).
   (window as unknown as Record<string, unknown>).__bloom = {
-    state: () => ({ busy: game.busy, ended: game.run?.ended ?? false, drops: game.run?.drops, pollen: game.run?.pollen, longest: game.run?.longest }),
+    cell: (q: number, r: number) => {
+      const b = garden.board;
+      for (let i = 0; i < b.size; i++) if (b.q[i] === q && b.r[i] === r) return garden.cellGlobal(i);
+      return null;
+    },
+    state: () => ({ lesson: (game as unknown as { lessonIdx: number }).lessonIdx, busy: game.busy, ended: game.run?.ended ?? false, drops: game.run?.drops, pollen: game.run?.pollen, longest: game.run?.longest }),
     pick: () => {
       const run = game.run!;
       const best = bestSingleTap(run.board, run.buds);

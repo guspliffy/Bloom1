@@ -22,7 +22,7 @@ Read the garden → tap a bud (1 drop, +1 petal) → if it reaches 4 it blooms a
 - **Drops.** A run starts with `run.startDrops`. Chains of at least `run.refundChain1/2/3` blooms give back 1/2/3 drops in total. The run ends at 0 drops.
 - **Generator.** Sprout petal counts are drawn from weights that blend from `sprout.petalWeightsGentle` to `sprout.petalWeightsWild` by difficulty. Arrows lean toward fuller neighbors with strength `alignGentle` → `alignWild`.
 - **Solver and adaptation.** Before each tap the solver finds the longest chain any single tap could start. The player's chain divided by that best is the tap's ratio. Taps with nothing bloomable, and small priming taps (no bloom when the best was under 3), are neutral. `adapt.streak` ratios ≥ `goodRatio` raise difficulty by `adapt.step`; the same number below `poorRatio` lower it. Label: Gentle < 0.33 ≤ Lively < 0.67 ≤ Wild. The summary shows the average ratio as "of the best chains".
-- **Intro (first visit only).** Two 7-bud gardens: a single glowing bud to tap, then three ready buds in a row that chain. Then the first real run with one line of text about drops.
+- **Tutorial (first visit, replayable from the ? card).** Four tiny gardens, each with one coach line at the top and progress dots, taught by doing: (1) tap a circled bud with 1 petal until it blooms, counting "n of 4 petals"; (2) a glowing bud with pulsing arrows blooms and feeds its neighbors; (3) three glowing buds chain when started from the circled one (other starts retry); (4) a 19-bud garden where the player must find a tap that blooms 4+ (a decoy glowing bud points away; failures reset with a hint). Then the How to play card (rules in five lines), Start, and a one-line tip toast.
 
 ## §4 Feel targets
 - Tap response under 100 ms: bud pop (`feel.tapPopMs`) and a ripple ring on pointer-down.
@@ -41,7 +41,7 @@ One endless garden mode with seeded randomness. Later bud types (line, star, dor
 - **Audio.** Major pentatonic from MIDI `audio.rootMidi`. The k-th bloom of a chain plays scale step k, climbing `audio.noteSteps` steps and then walking back down. Blooms in the same step are staggered by `audio.noteStaggerMs`. Bell voice (sine plus quiet triangle and third partial), `audio.noteDecay` seconds, through generated reverb and a soft delay. Taps that don't bloom play a water-drop blip; refunds sparkle; the run ends on a soft chord.
 
 ## §7 UX flow
-Open → intro (first visit) → run with HUD (drops left, pollen centre, mood chip right; new garden, sound and full-screen buttons at the bottom) → chain banner "×n" from the second bloom → floating "+pollen" and "+1 drop" → summary card (pollen, best, longest chain, flowers, drops used, chain-finding ratio) → "Plant a new garden".
+Open → tutorial (first visit) → How to play card → run with HUD (drops left, pollen centre, mood chip right; new garden, sound, how-to-play and full-screen buttons at the bottom) → chain banner "×n" from the second bloom → floating "+pollen" and "+1 drop" → summary card (pollen, best, longest chain, flowers, drops used, chain-finding ratio) → "Plant a new garden".
 
 ## §8 Backlog
 - Press-and-hold preview of a bloom's first step (fallback if chains read as random).

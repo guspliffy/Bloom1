@@ -19,7 +19,10 @@ export class GardenView extends Container {
   buds: BudView[] = [];
   s = 40;
   onTap: (cell: number) => void = () => {};
-  hintCell = -1;
+  /** Buds circled by a pulsing ring (tutorial). */
+  hintCells: number[] = [];
+  /** Pulse the arrows of the hinted buds (tutorial lesson on arrows). */
+  highlightArrows = false;
   private under = new Container();
   private budLayer = new Container();
   private over = new Container();
@@ -50,7 +53,7 @@ export class GardenView extends Container {
     const across = Math.sqrt(3) * (2 * R + 1);
     const down = 3 * R + 2;
     const [ew, eh] = portrait ? [down, across] : [across, down];
-    this.s = Math.min(72, (Math.min(w / ew, h / eh) * 0.96));
+    this.s = Math.min(R <= 1 ? 96 : 72, Math.min(w / ew, h / eh) * 0.96);
     this.rotation = portrait ? Math.PI / 6 : 0;
     this.position.set(x + w / 2, y + h / 2);
     for (const b of this.buds) b.layout(this.s);
@@ -75,11 +78,15 @@ export class GardenView extends Container {
       const v = this.buds[i];
       const target = !v.isOpen && v.petals >= MAX_PETALS ? 0.18 + 0.22 * pulse : 0;
       v.halo.alpha += (target - v.halo.alpha) * Math.min(1, dtMs / 120);
-      if (i === this.hintCell && !v.isOpen) {
+      const hinted = !v.isOpen && this.hintCells.includes(i);
+      if (hinted) {
         const p = (this.time * 0.9) % 1;
         v.hintRing.alpha = 0.7 * (1 - p);
         v.hintRing.scale.set(0.7 + p * 0.6);
       } else v.hintRing.alpha = 0;
+      if (!v.isOpen) v.arrowsG.alpha = hinted && this.highlightArrows ? 0.55 + 0.45 * pulse : Math.min(1, v.arrowsG.alpha + dtMs / 300);
+      v.arrowsG.scale.set(hinted && this.highlightArrows ? 1 + 0.12 * pulse : 1);
+      v.arrowsG.tint = hinted && this.highlightArrows ? palette.ready : 0xffffff;
     }
   }
 
@@ -239,13 +246,11 @@ export class GardenView extends Container {
         v.setBud(bud);
         v.budC.visible = true;
         v.arrowsG.visible = true;
+        v.arrowsG.alpha = 0;
         v.budC.scale.set(0);
         return Promise.all([
           fade,
-          this.tw.to(f.sproutMs, (t) => {
-            v.budC.scale.set(t);
-            v.arrowsG.alpha = Math.min(1, t * 1.5);
-          }, { ease: ease.outBack }),
+          this.tw.to(f.sproutMs, (t) => v.budC.scale.set(t), { ease: ease.outBack }),
         ]);
       }).then(() => {
         v.flower.visible = false;
