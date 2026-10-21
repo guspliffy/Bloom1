@@ -3,7 +3,7 @@
 Calm chain-reaction garden for phone and desktop browsers. Design: docs/GDD.md. Status: docs/STATE.md.
 
 ## Stack
-TypeScript, Vite, PixiJS 8 (WebGL), Vitest, Web Audio (synthesized, no sound files), Tweakpane (dev panel only). Static site. `.github/workflows/deploy.yml` builds every push to `main` and publishes `dist/` to the `gh-pages` branch, which GitHub Pages serves at https://guspliffy.github.io/Bloom1/.
+TypeScript, Vite, PixiJS 8 (WebGL), Vitest, Web Audio (synthesized, no sound files), Tweakpane (dev panel only). Static site, deployed to GitHub Pages (https://guspliffy.github.io/Bloom1/) by `.github/workflows/deploy.yml` on every push to `main`.
 
 ## Commands
 - `npm run dev`: dev server with hot reload (`--host`, so a phone on the same network can open it)
