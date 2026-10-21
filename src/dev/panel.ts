@@ -6,8 +6,19 @@ import { resetTuning, tuning } from '../tuning';
  * Dev tuning panel: live-edits every number in config/tuning.json and exports the result.
  * Open with ?dev in the URL or the ` key. Board, run, sprout and adapt values apply to the next garden.
  */
-export function createPanel(opts: { onAudio: () => void; onNewGarden: () => void; seed: () => number | undefined }): Pane {
+export function createPanel(opts: {
+  onAudio: () => void;
+  onNewGarden: () => void;
+  seed: () => number | undefined;
+  onGray: (on: boolean) => void;
+  onNight: (n: number) => void;
+}): Pane {
   const pane = new Pane({ title: 'Bloom tuning', expanded: true });
+  // Look checks: grayscale (ready buds must still stand out by value and shape) and the night factor.
+  const look = { grayscale: false, night: 0 };
+  const lookF = pane.addFolder({ title: 'look checks' });
+  lookF.addBinding(look, 'grayscale').on('change', (e) => opts.onGray(e.value));
+  lookF.addBinding(look, 'night', { min: 0, max: 1.15, step: 0.01 }).on('change', (e) => opts.onNight(e.value));
   const bindAll = (folder: FolderApi, obj: Record<string, unknown>) => {
     for (const [key, value] of Object.entries(obj)) {
       if (typeof value === 'number') folder.addBinding(obj, key, { step: Number.isInteger(value) ? 1 : 0.01 });

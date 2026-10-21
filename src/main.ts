@@ -4,12 +4,12 @@ import { bestSingleTap } from './core/solver';
 import { Game } from './game';
 import { Hud } from './hud';
 import './style.css';
-import { Fireflies } from './view/fireflies';
 import { GardenView } from './view/garden';
+import { Scene } from './view/scene';
 import { Tweener } from './view/tween';
 
-const TOP_HUD = 96;
-const BOTTOM_HUD = 76;
+const TOP_HUD = 84;
+const BOTTOM_HUD = 70;
 
 async function boot(): Promise<void> {
   const app = new Application();
@@ -23,11 +23,10 @@ async function boot(): Promise<void> {
   document.body.prepend(app.canvas);
 
   const tw = new Tweener();
-  const fireflies = new Fireflies();
-  const garden = new GardenView(tw);
-  const root = new Container();
-  root.addChild(fireflies, garden);
-  app.stage.addChild(root);
+  const scene = new Scene();
+  const overlay = new Container();
+  const garden = new GardenView(tw, overlay);
+  app.stage.addChild(scene.back, garden, scene.front, overlay);
 
   const hud = new Hud();
   const synth = new Synth();
@@ -35,17 +34,20 @@ async function boot(): Promise<void> {
   const relayout = () => {
     const w = app.screen.width;
     const h = app.screen.height;
-    fireflies.resize(w, h);
-    if (garden.board) garden.layout(12, TOP_HUD, w - 24, h - TOP_HUD - BOTTOM_HUD);
+    if (garden.board) {
+      garden.layout(12, TOP_HUD, w - 24, h - TOP_HUD - BOTTOM_HUD);
+      hud.setBedTop(garden.bedTop().y);
+    }
+    scene.resize(w, h, garden.s);
   };
-  const game = new Game(garden, hud, synth, tw, relayout);
+  const game = new Game(garden, scene, hud, synth, tw, relayout);
   app.renderer.on('resize', relayout);
 
   app.ticker.add((t) => {
     const dt = Math.min(t.deltaMS, 50);
     tw.tick(dt);
     garden.tick(dt);
-    fireflies.tick(dt);
+    scene.tick(dt);
   });
 
   const soundBtn = document.getElementById('btn-sound')!;
@@ -94,7 +96,13 @@ async function boot(): Promise<void> {
       return;
     }
     const { createPanel } = await import('./dev/panel');
-    panel = createPanel({ onAudio: () => synth.applyMix(), onNewGarden: () => game.newRun(), seed: () => game.run?.seed });
+    panel = createPanel({
+      onAudio: () => synth.applyMix(),
+      onNewGarden: () => game.newRun(),
+      seed: () => game.run?.seed,
+      onGray: (on) => document.body.classList.toggle('gray', on),
+      onNight: (n) => scene.setNight(n, 0),
+    });
   };
   if (new URLSearchParams(location.search).has('dev')) void togglePanel();
   window.addEventListener('keydown', (e) => {

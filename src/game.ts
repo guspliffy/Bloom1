@@ -1,12 +1,13 @@
+import { scheduleChain, type ChainSchedule } from './audio/schedule';
 import { chainStep, type Synth } from './audio/synth';
-import { resolveTap } from './core/rules';
+import { resolveTap, type Bud, type TapResult } from './core/rules';
 import { Run } from './core/run';
 import { bestSingleTap } from './core/solver';
 import { tutorialLessons, type Lesson } from './core/tutorial';
-import type { Bud } from './core/rules';
 import type { Hud } from './hud';
 import { tuning } from './tuning';
-import type { GardenView } from './view/garden';
+import { hudMoteCount, REDUCED_MOTION, type GardenView, type PlayHooks } from './view/garden';
+import type { Scene } from './view/scene';
 import type { Tweener } from './view/tween';
 
 const TUTORIAL_KEY = 'bloom.tutorialDone.v2';
@@ -22,7 +23,7 @@ function store(key: string, value?: string): string | null {
   }
 }
 
-/** Flow: guided tutorial (first visit, or on request), how-to card, then runs until the drops are spent, then the summary. */
+/** Flow: title moment, guided tutorial (first visit, or on request), runs until the drops are spent, then the garden rests. */
 export class Game {
   run: Run | null = null;
   private lessons: Lesson[] = [];
@@ -37,6 +38,7 @@ export class Game {
 
   constructor(
     private garden: GardenView,
+    private scene: Scene,
     private hud: Hud,
     private synth: Synth,
     private tw: Tweener,
@@ -45,21 +47,31 @@ export class Game {
     const params = new URLSearchParams(location.search);
     const seed = params.get('seed');
     this.fixedSeed = seed !== null && seed !== '' ? Number(seed) >>> 0 : null;
-    garden.onTap = (cell) => this.tap(cell);
+    garden.onTap = (cell) => void this.tap(cell);
     this.wantTutorial = params.has('tutorial') || params.has('intro') || store(TUTORIAL_KEY) !== '1';
   }
 
   start(): void {
     if (this.wantTutorial) this.startTutorial();
     else this.newRun();
+    this.hud.showTitle();
   }
 
-  startTutorial(): void {
+  private resetScene(): void {
     this.epoch++;
     this.busy = false;
     this.tw.clear();
+    this.synth.padOff();
     this.hud.hideSummary();
     this.hud.hideHowto();
+    this.hud.endChain();
+    this.scene.gather = null;
+    this.scene.fireflyBoost = 1;
+    this.scene.setNight(0);
+  }
+
+  startTutorial(): void {
+    this.resetScene();
     this.lessons = tutorialLessons();
     this.lessonIdx = 0;
     this.showLesson();
@@ -78,15 +90,12 @@ export class Game {
     this.hud.setStatsVisible(false);
     this.hud.coach(say ?? l.say, this.lessonIdx, this.lessons.length);
     this.relayout();
+    this.garden.sproutIn();
   }
 
   newRun(): void {
     if (this.inTutorial) store(TUTORIAL_KEY, '1');
-    this.epoch++;
-    this.busy = false;
-    this.tw.clear();
-    this.hud.hideSummary();
-    this.hud.hideHowto();
+    this.resetScene();
     const seed = this.fixedSeed ?? (Math.random() * 2 ** 32) >>> 0;
     this.run = new Run(tuning, seed);
     this.lessons = [];
@@ -98,6 +107,7 @@ export class Game {
     this.hud.setDrops(this.run.drops);
     this.hud.setPollen(0);
     this.relayout();
+    this.garden.sproutIn();
     this.hud.toast('Tap a glowing bud.');
     this.armIdleHint();
   }
@@ -114,8 +124,54 @@ export class Game {
     }, tuning.feel.idleHintMs);
   }
 
+  /** The run is one evening: each drop spent moves the sky toward night, refunds move it back. */
+  private updateNight(drops: number): void {
+    const start = tuning.run.startDrops;
+    this.scene.setNight(Math.max(0, Math.min(1, (start - drops) / start)));
+    this.scene.fireflyBoost = drops <= 2 ? 1.2 : 1;
+  }
+
+  /** Put the cascade on the note grid and schedule every note, chord and pad ahead of time. */
+  private schedule(result: TapResult): ChainSchedule {
+    const f = tuning.feel;
+    const a = tuning.audio;
+    const sched = scheduleChain(
+      result.steps.map((s) => s.blooms),
+      { ...a, firstStepDelayMs: f.firstStepDelayMs, holdBreathChain: f.holdBreathChain, holdBreathMs: f.holdBreathMs, holdBreathScale: f.holdBreathScale, holdBreath: !REDUCED_MOTION },
+      performance.now(),
+    );
+    const n = sched.cues.length;
+    for (const cue of sched.cues) {
+      if (cue.audible) this.synth.note(chainStep(cue.k, a.noteSteps), cue.at, 1, cue.k + 1 >= a.octaveDoubleChain);
+    }
+    if (n >= a.padChain) {
+      this.synth.padOn(sched.cues[a.padChain - 1].at);
+      this.synth.padOff(sched.chordAt + 400);
+    }
+    if (n >= a.chordChain) this.synth.chord(sched.chordAt, n >= 8);
+    if (n >= a.finaleChain) {
+      this.synth.finale(sched.chordAt, sched.sixteenthMs);
+      const pattern = tuning.feel.vibrateFinale;
+      setTimeout(() => navigator.vibrate?.(pattern), sched.chordAt);
+    }
+    return sched;
+  }
+
+  private hooks(onMote: () => void, toHud: boolean): PlayHooks {
+    return {
+      onBloom: (cue, x, y) => {
+        this.hud.setChain(cue.k + 1);
+        this.scene.attract(x, y);
+      },
+      pollenTarget: () => this.hud.pollenAnchor(),
+      onMote,
+      toHud,
+    };
+  }
+
   private async tap(cell: number): Promise<void> {
     this.synth.unlock();
+    this.hud.hideTitle();
     if (this.busy || this.hud.howtoOpen) return;
     if (this.inTutorial) return this.lessonTap(cell);
     const run = this.run;
@@ -125,33 +181,49 @@ export class Game {
     this.busy = true;
     clearTimeout(this.idleTimer);
     this.garden.hintCells = [];
+    const pollenBefore = run.pollen;
     const out = run.tap(cell);
     const n = out.result.bloomed.length;
-    this.garden.tapFeedback(cell);
-    this.hud.setDrops(run.drops - out.refund, true);
+    this.hud.spendDrop();
+    this.updateNight(run.drops - out.refund);
+
+    await this.garden.tapFeedback(cell);
+    if (epoch !== this.epoch) return;
+    this.garden.addTappedPetal(cell);
     if (n === 0) this.synth.drop();
 
-    await this.garden.playChain(out.result, this.bloomHooks());
+    // Pollen reaches the counter mote by mote; the number ticks on each arrival.
+    const motes = hudMoteCount(n);
+    let arrived = 0;
+    let motesDone: () => void = () => {};
+    const motesIn = new Promise<void>((r) => (motesDone = r));
+    if (motes === 0) motesDone();
+    const onMote = () => {
+      if (epoch !== this.epoch) return;
+      arrived++;
+      this.hud.setPollen(Math.round(pollenBefore + (out.pollen * arrived) / motes), true);
+      this.synth.tick(arrived);
+      if (arrived >= motes) motesDone();
+    };
+
+    await this.garden.playChain(out.result, this.schedule(out.result), this.hooks(onMote, true));
     if (epoch !== this.epoch) return;
     this.hud.endChain();
 
-    if (n > 0) {
-      const last = this.garden.cellGlobal(out.result.bloomed[n - 1]);
-      this.hud.float(`+${out.pollen}`, last.x, last.y, 'pollen-f');
-      this.hud.setPollen(run.pollen, true);
-    }
+    const jobs: Promise<unknown>[] = [Promise.race([motesIn, this.tw.wait(1600)])];
     if (out.refund > 0) {
-      const a = this.hud.dropsAnchor();
-      this.hud.float(`+${out.refund} drop${out.refund > 1 ? 's' : ''}`, a.x, a.y, 'drop-f');
-      this.hud.setDrops(run.drops, true);
-      this.synth.refund(out.refund);
+      const last = this.garden.cellGlobal(out.result.bloomed[n - 1]);
+      this.synth.refund();
+      jobs.push(this.hud.refundDrops(out.refund, last.x, last.y, () => {}));
+      this.updateNight(run.drops);
     }
     if (n > 0) {
-      await this.tw.wait(tuning.feel.sproutDelayMs);
-      if (epoch !== this.epoch) return;
-      await this.garden.sprout(out.sprouts);
-      if (epoch !== this.epoch) return;
+      jobs.push(this.tw.wait(tuning.feel.sproutDelayMs).then(() => (epoch === this.epoch ? this.garden.sprout(out.sprouts) : undefined)));
     }
+    await Promise.all(jobs);
+    if (epoch !== this.epoch) return;
+    this.hud.setPollen(run.pollen);
+    this.hud.setDrops(run.drops);
     this.garden.sync(run.buds);
     this.busy = false;
     if (out.ended) {
@@ -160,26 +232,18 @@ export class Game {
     } else this.armIdleHint();
   }
 
-  private bloomHooks() {
-    return {
-      onBloom: (k: number, _cell: number, delay: number) => {
-        this.synth.note(chainStep(k, tuning.audio.noteSteps), delay);
-        setTimeout(() => this.hud.setChain(k + 1), delay);
-        if (tuning.feel.vibrateMs > 0) navigator.vibrate?.(tuning.feel.vibrateMs);
-      },
-    };
-  }
-
   private async lessonTap(cell: number): Promise<void> {
     const l = this.lessons[this.lessonIdx];
     const epoch = this.epoch;
     this.busy = true;
     const result = resolveTap(l.board, this.lessonBuds, cell);
     const fb = l.judge(result, this.lessonBuds);
-    this.garden.tapFeedback(cell);
-    if (result.bloomed.length === 0) this.synth.drop();
     if (fb.outcome === 'continue') this.hud.coach(fb.say, this.lessonIdx, this.lessons.length);
-    await this.garden.playChain(result, this.bloomHooks());
+    await this.garden.tapFeedback(cell);
+    if (epoch !== this.epoch) return;
+    this.garden.addTappedPetal(cell);
+    if (result.bloomed.length === 0) this.synth.drop();
+    await this.garden.playChain(result, this.schedule(result), this.hooks(() => {}, false));
     if (epoch !== this.epoch) return;
     this.hud.endChain();
     this.lessonBuds = this.lessonBuds.map((b, i) => ({ petals: result.petals[i], arrows: b.arrows }));
@@ -198,19 +262,29 @@ export class Game {
     this.newRun();
   }
 
+  /** The garden rests: stillness, the sky past night, fireflies gather, the chord, then the tally. */
   private async finish(run: Run, epoch: number): Promise<void> {
-    await this.tw.wait(700);
+    await this.tw.wait(600);
+    if (epoch !== this.epoch) return;
+    const f = tuning.feel;
+    this.scene.setNight(1.15, f.endNightMs);
+    this.scene.gather = this.garden.centre();
+    this.garden.restDim = true;
+    this.synth.endChord();
+    await this.tw.wait(f.endNightMs * 0.6);
     if (epoch !== this.epoch) return;
     const prev = Number(store(BEST_KEY) ?? 0);
     const newBest = run.pollen > prev;
     if (newBest) store(BEST_KEY, String(run.pollen));
-    this.synth.endChord();
-    this.hud.showSummary({
-      pollen: run.pollen,
-      best: Math.max(prev, run.pollen),
-      newBest: newBest && prev > 0,
-      longest: run.longest,
-      blooms: run.totalBlooms,
-    });
+    this.hud.showSummary(
+      {
+        pollen: run.pollen,
+        best: Math.max(prev, run.pollen),
+        newBest: newBest && prev > 0,
+        longest: run.longest,
+        blooms: run.totalBlooms,
+      },
+      (i) => this.synth.tick(i),
+    );
   }
 }

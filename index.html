@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#120f26" />
+    <meta name="theme-color" content="#1b1a44" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -11,56 +11,60 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icon-180.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet" />
     <title>Bloom</title>
   </head>
   <body>
     <div id="hud">
       <div class="top">
-        <div class="stat drops" id="drops" title="Drops left">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5C9 7 5.5 10.6 5.5 14.6a6.5 6.5 0 0 0 13 0C18.5 10.6 15 7 12 2.5Z" /></svg>
-          <span class="value">10</span>
-        </div>
-        <div class="stat pollen" id="pollen" title="Pollen">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5c.7 5.6 4.9 9.8 10.5 10.5-5.6.7-9.8 4.9-10.5 10.5-.7-5.6-4.9-9.8-10.5-10.5C7.1 11.3 11.3 7.1 12 1.5Z" /></svg>
+        <div class="pips" id="drops" aria-label="Drops left"></div>
+        <div class="pollen" id="pollen" aria-label="Pollen">
+          <svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5c.7 5.6 4.9 9.8 10.5 10.5-5.6.7-9.8 4.9-10.5 10.5-.7-5.6-4.9-9.8-10.5-10.5C7.1 11.3 11.3 7.1 12 1.5Z" /></svg>
           <span class="value">0</span>
         </div>
       </div>
+      <div class="title" id="title">Bloom</div>
       <div class="coach" id="coach"><div class="steps" id="coach-steps"></div><p id="coach-text"></p></div>
-      <div class="chain" id="chain"><span class="n">0</span><span class="label">blooms</span></div>
+      <div class="chain" id="chain">×0</div>
       <div class="toast" id="toast"></div>
       <div class="bottom">
-        <button id="btn-sound" aria-label="Sound on or off" title="Sound">
+        <button id="btn-sound" class="glass" aria-label="Sound on or off" title="Sound">
           <svg viewBox="0 0 24 24" class="on"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" /></svg>
           <svg viewBox="0 0 24 24" class="off"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="m16.5 9.5 5 5m0-5-5 5" /></svg>
         </button>
-        <button id="btn-help" aria-label="How to play" title="How to play">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6" /><circle cx="12" cy="17" r=".6" fill="currentColor" /></svg>
+        <button id="btn-help" class="glass" aria-label="How to play" title="How to play">
+          <svg viewBox="0 0 24 24"><path d="M9.4 9.2a2.7 2.7 0 1 1 3.7 2.5c-.7.3-1.1.9-1.1 1.6v.7" /><circle cx="12" cy="17.4" r=".7" fill="currentColor" stroke="none" /></svg>
         </button>
       </div>
-      <div class="overlay hidden" id="howto">
-        <div class="card howto">
-          <h1>How to play</h1>
+      <div class="sheet hidden" id="howto">
+        <div class="sheet-body">
+          <h2>How to play</h2>
           <ol>
             <li>Tap a bud: +1 petal. Costs a drop.</li>
             <li>At 4 petals it blooms and sends petals along its arrows.</li>
             <li>Long chains score more and give drops back.</li>
           </ol>
-          <button id="btn-back" class="primary">Back to the garden</button>
-          <button id="btn-tutorial" class="secondary">Replay the tutorial</button>
-          <button id="btn-new" class="secondary">New garden</button>
-          <button id="btn-full" class="secondary">Full screen</button>
+          <button id="btn-back" class="pill">Back to the garden</button>
+          <div class="links">
+            <button id="btn-tutorial" class="link">Replay the tutorial</button>
+            <button id="btn-new" class="link">New garden</button>
+            <button id="btn-full" class="link">Full screen</button>
+          </div>
         </div>
       </div>
-      <div class="overlay hidden" id="summary">
-        <div class="card">
-          <h1>The garden rests</h1>
-          <div class="big"><span id="sum-pollen">0</span><small>pollen</small></div>
+      <div class="sheet hidden" id="summary">
+        <div class="sheet-body">
+          <h3>The garden rests</h3>
+          <div class="big" id="sum-pollen">0</div>
+          <div class="caps">pollen</div>
           <div class="best" id="sum-best"></div>
-          <div class="grid">
-            <div><b id="sum-longest">0</b><span>longest chain</span></div>
-            <div><b id="sum-blooms">0</b><span>flowers bloomed</span></div>
+          <div class="stats">
+            <div><b id="sum-longest">0</b><span class="caps">longest chain</span></div>
+            <div><b id="sum-blooms">0</b><span class="caps">flowers bloomed</span></div>
           </div>
-          <button id="btn-again" class="primary">Plant a new garden</button>
+          <button id="btn-again" class="pill">Plant a new garden</button>
         </div>
       </div>
     </div>

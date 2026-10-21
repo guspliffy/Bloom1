@@ -1,68 +1,120 @@
 import { Circle, Container, Graphics, Sprite } from 'pixi.js';
 import { dirAngle } from '../core/hex';
 import { MAX_PETALS, type Bud } from '../core/rules';
-import { palette } from './palette';
-import { glowTexture } from './textures';
+import { tuning } from '../tuning';
+import { jitterColor, lerpColor, palette } from './palette';
+import { coreTexture, dropTexture, glowTexture, PETAL_ASPECT, PETAL_TEX_LEN, petalTexture, shadowTexture } from './textures';
 
-/** Teardrop petal from the origin toward angle `a`. */
-export function drawPetal(g: Graphics, a: number, len: number, wid: number, inner = 0): Graphics {
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  const p = (x: number, y: number): [number, number] => [x * c - y * s, x * s + y * c];
-  const [x0, y0] = p(inner, 0);
-  const [c1x, c1y] = p(inner + len * 0.35, -wid);
-  const [c2x, c2y] = p(inner + len * 0.95, -wid * 0.55);
-  const [tx, ty] = p(inner + len, 0);
-  const [c3x, c3y] = p(inner + len * 0.95, wid * 0.55);
-  const [c4x, c4y] = p(inner + len * 0.35, wid);
-  return g.moveTo(x0, y0).bezierCurveTo(c1x, c1y, c2x, c2y, tx, ty).bezierCurveTo(c3x, c3y, c4x, c4y, x0, y0).closePath();
+const PETAL_HALF = (PETAL_TEX_LEN - 2) * PETAL_ASPECT;
+
+export function petalSprite(): Sprite {
+  const p = new Sprite(petalTexture());
+  p.anchor.set(0, 0.5);
+  return p;
+}
+
+/** Size a petal sprite: base `inner` from the centre, `len` long, `halfW` half-width, pointing at `angle`. */
+export function shapePetal(p: Sprite, len: number, halfW: number, inner: number, angle: number): void {
+  p.scale.set(len / (PETAL_TEX_LEN - 2), halfW / PETAL_HALF);
+  p.rotation = angle;
+  p.position.set(Math.cos(angle) * inner, Math.sin(angle) * inner);
+}
+
+function hash(i: number, salt: number): number {
+  let h = (i * 374761393 + salt * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 /**
- * One bud, drawn with as little ink as possible (GDD §6): one petal per petal, each pointing along one
- * of the bud's arrows, and arrow heads only when the bud is ready (or hovered on desktop).
+ * One bud (GDD §6): a contact shadow, lit petal sprites pointing along its arrows, a cream core,
+ * and when ready a warm halo and chevrons. Open, it becomes a flower of 16 petals around a pistil.
  */
 export class BudView extends Container {
-  readonly halo: Sprite;
-  /** Arrow heads, drawn white; the garden sets their alpha and tint each frame. */
+  readonly shadow = new Sprite(shadowTexture());
+  readonly halo = new Sprite(glowTexture());
+  readonly hintRing = new Graphics();
+  readonly hintDrop = new Sprite(dropTexture());
+  /** Chevrons, drawn white; the garden sets their alpha and tint each frame. */
   readonly arrowsG = new Graphics();
   readonly budC = new Container();
-  readonly petalsG = new Graphics();
+  private petalSprites: Sprite[] = [];
+  private core = new Sprite(coreTexture());
   readonly flower = new Container();
-  private flowerG = new Graphics();
-  readonly hintRing = new Graphics();
+  readonly flowerPetals: Sprite[] = [];
+  private pistil = new Graphics();
+  private flowerCore = new Sprite(coreTexture());
+  /** Additive light of the open flower; lives in the garden's light layer. */
+  bloomHalo: Sprite | null = null;
   petals = 0;
   isOpen = false;
+  /** Name of a scale animation in progress on budC ('' when idle breathing owns it). */
+  anim = '';
   hovered = false;
-  private arrows: number[] = [];
-  private s: number;
+  /** Base angle of each visible petal (for the idle lean). */
+  petalAngles: number[] = [];
+  arrows: number[] = [];
+  s: number;
+  rot = 0;
+  readonly phase: number;
+  readonly period: number;
+  readonly jitterRot: number;
+  readonly jitterScale: number;
+  private hue1: number;
+  private hue2: number;
 
-  constructor(s: number) {
+  constructor(s: number, readonly cell: number) {
     super();
     this.s = s;
-    this.halo = new Sprite(glowTexture());
+    this.phase = hash(cell, 1) * Math.PI * 2;
+    this.period = 3 + hash(cell, 2) * 1.5;
+    this.jitterRot = ((hash(cell, 3) - 0.5) * 2 * tuning.feel.jitterDeg * Math.PI) / 180;
+    this.jitterScale = 1 + (hash(cell, 4) - 0.5) * 2 * tuning.feel.jitterScale;
+    this.hue1 = hash(cell, 5);
+    this.hue2 = hash(cell, 6);
+
+    this.shadow.anchor.set(0.5);
     this.halo.anchor.set(0.5);
     this.halo.blendMode = 'add';
     this.halo.alpha = 0;
     this.halo.tint = palette.ready;
-    this.flower.addChild(this.flowerG);
+    this.hintRing.blendMode = 'add';
+    this.hintRing.alpha = 0;
+    this.hintDrop.anchor.set(0.5, 1);
+    this.hintDrop.tint = palette.hint;
+    this.hintDrop.alpha = 0;
+    this.core.anchor.set(0.5);
+    this.flowerCore.anchor.set(0.5);
+    for (let i = 0; i < MAX_PETALS; i++) {
+      const p = petalSprite();
+      this.petalSprites.push(p);
+      this.budC.addChild(p);
+    }
+    this.budC.addChild(this.core);
+    for (let i = 0; i < 16; i++) {
+      const p = petalSprite();
+      this.flowerPetals.push(p);
+      this.flower.addChild(p);
+    }
+    this.flower.addChild(this.pistil, this.flowerCore);
     this.flower.visible = false;
-    this.budC.addChild(this.petalsG);
     this.arrowsG.alpha = 0;
-    this.addChild(this.halo, this.hintRing, this.arrowsG, this.flower, this.budC);
+    this.addChild(this.shadow, this.halo, this.hintRing, this.arrowsG, this.flower, this.budC, this.hintDrop);
     this.eventMode = 'static';
     this.cursor = 'pointer';
     this.on('pointerover', () => (this.hovered = true));
     this.on('pointerout', () => (this.hovered = false));
-    this.layout(s);
+    this.layout(s, 0);
   }
 
-  layout(s: number): void {
+  layout(s: number, rot: number): void {
     this.s = s;
+    this.rot = rot;
     this.hitArea = new Circle(0, 0, s * 0.95);
     this.halo.width = this.halo.height = s * 2.6;
-    this.hintRing.clear().circle(0, 0, s * 0.92).stroke({ width: Math.max(1.5, s * 0.05), color: 0xffffff, alpha: 0.8 });
-    this.hintRing.alpha = 0;
+    this.hintRing.clear().circle(0, 0, s * 0.85).stroke({ width: 2, color: palette.hint });
+    this.hintDrop.width = s * 0.32;
+    this.hintDrop.height = s * 0.42;
     this.drawArrows();
     this.drawPetals();
   }
@@ -83,39 +135,94 @@ export class BudView extends Container {
     return !this.isOpen && this.petals >= MAX_PETALS;
   }
 
+  angleOf(dir: number): number {
+    return dirAngle(dir) + this.rot;
+  }
+
   private drawArrows(): void {
     const s = this.s;
     const g = this.arrowsG.clear();
     for (const d of this.arrows) {
-      const a = dirAngle(d);
+      const a = this.angleOf(d);
       const c = Math.cos(a);
       const n = Math.sin(a);
-      const tip = s * 0.85;
+      const tip = s * 0.82;
       const base = s * 0.66;
       const notch = s * 0.72;
-      const w = s * 0.15;
+      const w = s * 0.13;
       g.poly([c * tip, n * tip, c * base - n * w, n * base + c * w, c * notch, n * notch, c * base + n * w, n * base - c * w]).fill({ color: 0xffffff });
     }
   }
 
   private drawPetals(): void {
     const s = this.s;
-    const g = this.petalsG.clear();
     const n = Math.min(this.petals, MAX_PETALS);
-    const color = palette.petalByCount[n];
-    for (let i = 0; i < n && i < this.arrows.length; i++) {
-      drawPetal(g, dirAngle(this.arrows[i]), s * 0.55, s * 0.21, s * 0.08).fill({ color, alpha: n === MAX_PETALS ? 0.95 : 0.9 });
-    }
-    if (n === 0) g.circle(0, 0, s * 0.1).fill({ color: palette.core, alpha: 0.45 });
-    else g.circle(0, 0, s * 0.12).fill({ color: palette.core, alpha: 0.95 });
+    const base = n >= MAX_PETALS ? palette.petalReady : palette.petalIdle;
+    const tint = jitterColor(base, this.hue1, this.hue2, tuning.feel.jitterHueDeg / 120);
+    this.petalAngles = [];
+    this.petalSprites.forEach((p, i) => {
+      p.visible = i < n && i < this.arrows.length;
+      if (!p.visible) return;
+      const a = this.angleOf(this.arrows[i]);
+      this.petalAngles.push(a);
+      shapePetal(p, s * 0.55, s * 0.21, s * 0.08, a);
+      p.tint = tint;
+    });
+    const seed = n === 0;
+    this.core.width = this.core.height = s * (seed ? 0.18 : 0.26);
+    this.core.tint = seed ? palette.seed : 0xffffff;
+    this.core.alpha = seed ? 0.55 : 1;
+    this.shadow.width = s * 0.9 * (seed ? 0.5 : 1);
+    this.shadow.height = s * 0.45 * (seed ? 0.5 : 1);
+    this.shadow.position.set(0, s * 0.16);
+    this.shadow.alpha = 0.3;
   }
 
-  /** Large open flower shown while a bloomed cell waits to sprout. */
-  drawFlower(color: number): void {
+  /** Idle life, called every frame: petals lean on their own phase. */
+  lean(t: number): void {
+    const amp = (tuning.feel.idleLeanDeg * Math.PI) / 180;
+    let j = 0;
+    for (const p of this.petalSprites) {
+      if (!p.visible) continue;
+      const a = this.petalAngles[j] + Math.sin(t * Math.PI * 0.6 + this.phase + j * 2.1) * amp;
+      const inner = this.s * 0.08;
+      p.rotation = a;
+      p.position.set(Math.cos(a) * inner, Math.sin(a) * inner);
+      j++;
+    }
+  }
+
+  /** Prepare the open flower in the chain hue (petals start folded; `unfold` animates them). */
+  setFlower(color: number): void {
     const s = this.s;
-    const g = this.flowerG.clear();
-    for (let k = 0; k < 8; k++) drawPetal(g, (k * Math.PI) / 4 + Math.PI / 8, s * 0.82, s * 0.26, s * 0.08).fill({ color, alpha: 0.9 });
-    for (let k = 0; k < 8; k++) drawPetal(g, (k * Math.PI) / 4, s * 0.5, s * 0.16, s * 0.06).fill({ color: 0xffffff, alpha: 0.35 });
-    g.circle(0, 0, s * 0.17).fill({ color: palette.core });
+    const inner = lerpColor(color, 0xfff4e0, 0.55);
+    this.flowerPetals.forEach((p, i) => {
+      p.tint = i < 8 ? color : inner;
+    });
+    this.flowerCore.width = this.flowerCore.height = s * 0.3;
+    const g = this.pistil.clear();
+    for (let k = 0; k < 5; k++) {
+      const a = (k * Math.PI * 2) / 5 - Math.PI / 2;
+      g.circle(Math.cos(a) * s * 0.12, Math.sin(a) * s * 0.12, s * 0.04).fill({ color: palette.pollen });
+    }
+    this.unfold(0);
+  }
+
+  /** Flower petals unfold from -25° to rest, each `petalUnfoldStaggerMs` after the last. `ms` is time since opening. */
+  unfold(ms: number): void {
+    const s = this.s;
+    const f = tuning.feel;
+    const span = Math.max(1, f.bloomOpenMs - 15 * f.petalUnfoldStaggerMs);
+    this.flowerPetals.forEach((p, i) => {
+      const t = Math.max(0, Math.min(1, (ms - i * f.petalUnfoldStaggerMs) / span));
+      const e = 1 - (1 - t) ** 3;
+      const outer = i < 8;
+      const k = i % 8;
+      const rest = (k * Math.PI) / 4 + (outer ? Math.PI / 8 : 0) + this.rot;
+      const a = rest - (25 * Math.PI * (1 - e)) / 180;
+      if (outer) shapePetal(p, s * 0.82 * (0.6 + 0.4 * e), s * 0.26, s * 0.08, a);
+      else shapePetal(p, s * 0.5 * (0.6 + 0.4 * e), s * 0.16, s * 0.06, a);
+      p.alpha = Math.min(1, t * 3) * (outer ? 0.95 : 0.8);
+    });
   }
 }

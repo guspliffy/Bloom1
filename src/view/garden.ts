@@ -1,45 +1,87 @@
-import { Container, Graphics, Sprite } from 'pixi.js';
+import { Container, Sprite } from 'pixi.js';
+import type { BloomCue, ChainSchedule } from '../audio/schedule';
 import { cellCenter, dirAngle, type Board } from '../core/hex';
 import { MAX_PETALS, type Bud, type TapResult } from '../core/rules';
 import type { Sprout } from '../core/run';
 import { tuning } from '../tuning';
-import { BudView, drawPetal } from './budView';
+import { bedTexture } from './bed';
+import { BudView, petalSprite, shapePetal } from './budView';
 import { palette } from './palette';
-import { glowTexture } from './textures';
-
-const FINE_POINTER = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
+import { dropTexture, glowTexture } from './textures';
 import { ease, type Tweener } from './tween';
 
-export interface PlayHooks {
-  /** Called as each bud bursts open; `n` counts blooms so far in this chain, from 0. */
-  onBloom(n: number, cell: number, delayMs: number): void;
+const FINE_POINTER = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
+export const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Pollen motes that fly to the HUD for a chain of n blooms (the counter ticks once per mote). */
+export function hudMoteCount(n: number): number {
+  return Math.min(n, 8) * tuning.feel.pollenToHudMotes;
 }
 
-/** Draws the garden and replays a resolved tap as an animated cascade. */
+export interface PlayHooks {
+  /** A bud opens (screen position), for fireflies and the chain count. */
+  onBloom(cue: BloomCue, x: number, y: number): void;
+  /** Where pollen motes fly to (screen coords). */
+  pollenTarget(): { x: number; y: number };
+  /** One pollen mote reached the counter. */
+  onMote(): void;
+  /** Send motes to the HUD counter (off in the tutorial, where the counter is hidden). */
+  toHud: boolean;
+}
+
+/** Draws the garden bed and buds, and replays a resolved tap as a cascade of light on the note grid. */
 export class GardenView extends Container {
   board!: Board;
   buds: BudView[] = [];
   s = 40;
+  rot = 0;
   onTap: (cell: number) => void = () => {};
-  /** Buds circled by a pulsing ring (tutorial). */
+  /** Buds circled by a breathing ring with a waiting drop (tutorial and first-run hint). */
   hintCells: number[] = [];
-  /** Pulse the arrows of the hinted buds (tutorial lesson on arrows). */
+  /** Pulse the chevrons of the hinted buds (tutorial lesson on arrows). */
   highlightArrows = false;
-  private under = new Container();
+  /** Buds rest dimmer when the garden sleeps at the end of a run. */
+  restDim = false;
+  private bed = new Sprite();
+  private light = new Container();
   private budLayer = new Container();
-  private over = new Container();
+  private fx = new Container();
+  private chainLight = new Sprite(glowTexture());
+  private chainTarget = { x: 0, y: 0, size: 0, alpha: 0 };
+  private dimmed = new Set<number>();
+  private zoomTarget = 1;
+  private zoom = 1;
   private time = 0;
+  private particles = 0;
+  private baseX = 0;
+  private baseY = 0;
 
-  constructor(private tw: Tweener) {
+  constructor(
+    private tw: Tweener,
+    /** Screen-space layer above everything, for motes flying to the HUD. */
+    private overlay: Container,
+  ) {
     super();
-    this.addChild(this.under, this.budLayer, this.over);
+    this.bed.anchor.set(0.5);
+    this.chainLight.anchor.set(0.5);
+    this.chainLight.blendMode = 'add';
+    this.chainLight.tint = palette.cascadeLight;
+    this.chainLight.alpha = 0;
+    this.light.addChild(this.chainLight);
+    this.addChild(this.bed, this.light, this.budLayer, this.fx);
   }
 
   setGarden(board: Board, buds: readonly Bud[]): void {
     this.board = board;
-    for (const b of this.buds) b.destroy({ children: true });
+    for (const b of this.buds) {
+      b.bloomHalo?.destroy();
+      b.destroy({ children: true });
+    }
+    this.dimmed.clear();
+    this.restDim = false;
     this.buds = buds.map((bud, i) => {
-      const v = new BudView(this.s);
+      const v = new BudView(this.s, i);
+      v.layout(this.s, this.rot);
       v.setBud(bud);
       v.on('pointerdown', () => this.onTap(i));
       this.budLayer.addChild(v);
@@ -48,24 +90,52 @@ export class GardenView extends Container {
     this.place();
   }
 
-  /** Fit the garden into the given box. Portrait screens get the board turned 30° (flat-top), which fits them better. */
+  /** Fit bed and board into the box. Portrait screens turn the board 30°, which fits them better. */
   layout(x: number, y: number, w: number, h: number): void {
     const R = this.board.radius;
     const portrait = h > w * 1.1;
-    const across = Math.sqrt(3) * (2 * R + 1);
-    const down = 3 * R + 2;
+    const across = Math.sqrt(3) * (2 * R + 1) + 2.4;
+    const down = 3 * R + 2 + 2.6;
     const [ew, eh] = portrait ? [down, across] : [across, down];
-    this.s = Math.min(R <= 1 ? 96 : 72, Math.min(w / ew, h / eh) * 0.96);
-    this.rotation = portrait ? Math.PI / 6 : 0;
-    this.position.set(x + w / 2, y + h / 2);
-    for (const b of this.buds) b.layout(this.s);
+    this.s = Math.min(R <= 1 ? 80 : 64, Math.min(w / ew, h / eh));
+    this.rot = portrait ? Math.PI / 6 : 0;
+    this.baseX = x + w / 2;
+    this.baseY = y + h / 2;
+    this.position.set(this.baseX, this.baseY);
+    for (const b of this.buds) {
+      b.layout(this.s, this.rot);
+      b.setPetals(b.petals);
+      if (b.isOpen && b.bloomHalo) b.bloomHalo.width = b.bloomHalo.height = this.s * 3.2;
+    }
     this.place();
+    const res = Math.min(2, window.devicePixelRatio || 1);
+    this.bed.texture = bedTexture(R, this.s, this.rot, this.buds.map((b) => ({ x: b.x, y: b.y })), res);
+    this.bed.scale.set(1 / res);
+  }
+
+  /** Centre of the bed and a radius that covers it (screen coords). */
+  centre(): { x: number; y: number; r: number } {
+    return { x: this.baseX, y: this.baseY, r: 0.866 * (2 * this.board.radius + 1) * this.s };
+  }
+
+  /** Top of the bed and its centre (screen coords), for the title and the chain count. */
+  bedTop(): { x: number; y: number } {
+    const rb = 0.866 * (2 * this.board.radius + 1) * this.s + this.s;
+    return { x: this.baseX, y: this.baseY - rb * (this.rot ? 1 : 0.866) };
+  }
+
+  private local(i: number): { x: number; y: number } {
+    const c = cellCenter(this.board, i, this.s);
+    const cs = Math.cos(this.rot);
+    const sn = Math.sin(this.rot);
+    return { x: c.x * cs - c.y * sn, y: c.x * sn + c.y * cs };
   }
 
   private place(): void {
     this.buds.forEach((v, i) => {
-      const c = cellCenter(this.board, i, this.s);
+      const c = this.local(i);
       v.position.set(c.x, c.y);
+      v.bloomHalo?.position.set(c.x, c.y);
     });
   }
 
@@ -76,21 +146,35 @@ export class GardenView extends Container {
   tick(dtMs: number): void {
     const f = tuning.feel;
     this.time += dtMs / 1000;
-    const pulse = 0.5 + 0.5 * Math.sin(this.time * Math.PI * 2 * f.readyPulseHz);
+    const t = this.time;
+    const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 * f.readyPulseHz);
+    const k = Math.min(1, dtMs / 120);
     for (let i = 0; i < this.buds.length; i++) {
       const v = this.buds[i];
-      const ready = v.ready;
-      v.halo.alpha += ((ready ? 0.22 + 0.22 * pulse : 0) - v.halo.alpha) * Math.min(1, dtMs / 120);
-      v.petalsG.scale.set(ready ? 1 + f.readyBreathe * pulse : 1);
+      const ready = v.ready && v.anim !== 'grow';
+      v.halo.alpha += ((ready ? 0.22 + 0.22 * pulse : 0) - v.halo.alpha) * k;
+      if (!v.isOpen) {
+        const idle = 1 + f.idleBreathe * Math.sin((t * Math.PI * 2) / v.period + v.phase);
+        const breathe = ready ? 1 + f.readyBreathe * pulse : idle;
+        if (!v.anim) v.budC.scale.set(breathe * v.jitterScale);
+        v.budC.rotation = v.jitterRot;
+        v.lean(t);
+      }
+      const dimTo = this.restDim ? 0.6 : this.dimmed.has(i) ? f.cascadeDimAlpha : 1;
+      v.alpha += (dimTo - v.alpha) * Math.min(1, dtMs / 250);
 
       const hinted = !v.isOpen && this.hintCells.includes(i);
-      if (hinted) {
-        const p = (this.time * 0.9) % 1;
-        v.hintRing.alpha = 0.7 * (1 - p);
-        v.hintRing.scale.set(0.7 + p * 0.6);
-      } else v.hintRing.alpha = 0;
+      const hp = 0.5 + 0.5 * Math.sin(t * Math.PI * 2);
+      v.hintRing.alpha += ((hinted ? 0.4 + 0.5 * hp : 0) - v.hintRing.alpha) * k;
+      v.hintDrop.alpha += ((hinted ? 0.85 : 0) - v.hintDrop.alpha) * k;
+      v.hintDrop.y = -this.s * 0.7 - 4 * hp;
+      // Skip drawing what cannot be seen (fill rate matters on phones).
+      v.halo.visible = v.halo.alpha > 0.01;
+      v.hintRing.visible = v.hintRing.alpha > 0.01;
+      v.hintDrop.visible = v.hintDrop.alpha > 0.01;
+      v.arrowsG.renderable = v.arrowsG.alpha > 0.01;
 
-      // Arrow heads: amber on ready buds, faint on a hovered bud (desktop only), otherwise hidden.
+      // Chevrons: warm on ready buds, faint on a hovered bud (desktop only), otherwise hidden.
       const hover = !ready && !v.isOpen && v.hovered && FINE_POINTER;
       const target = ready ? 0.9 : hover ? 0.4 : 0;
       const rate = target > v.arrowsG.alpha ? (ready ? 180 : f.arrowRevealMs) : 200;
@@ -98,103 +182,229 @@ export class GardenView extends Container {
       v.arrowsG.alpha = target > v.arrowsG.alpha ? Math.min(target, v.arrowsG.alpha + step) : Math.max(target, v.arrowsG.alpha - step);
       if (ready) v.arrowsG.tint = palette.petalReady;
       else if (hover) v.arrowsG.tint = palette.arrow;
-      v.arrowsG.scale.set(hinted && this.highlightArrows ? 1 + 0.12 * pulse : 1);
+      v.arrowsG.scale.set(hinted && this.highlightArrows ? 1 + 0.12 * pulse : ready ? 1 + f.readyBreathe * pulse : 1);
     }
+
+    const ct = this.chainTarget;
+    const ck = Math.min(1, dtMs / 300);
+    this.chainLight.x += (ct.x - this.chainLight.x) * ck;
+    this.chainLight.y += (ct.y - this.chainLight.y) * ck;
+    const size = this.chainLight.width + (ct.size - this.chainLight.width) * ck;
+    this.chainLight.width = this.chainLight.height = Math.max(1, size);
+    this.chainLight.alpha += (ct.alpha - this.chainLight.alpha) * Math.min(1, dtMs / (ct.alpha > this.chainLight.alpha ? 300 : 900));
+    this.chainLight.visible = this.chainLight.alpha > 0.005;
+
+    this.zoom += (this.zoomTarget - this.zoom) * Math.min(1, dtMs / (tuning.feel.cascadeZoomMs / 3));
+    this.scale.set(this.zoom);
   }
 
-  /** Small pop and ripple the moment a finger lands, before any chain logic plays. */
-  tapFeedback(cell: number): void {
+  /** The finger lands: a drop falls onto the bud, it pops, a ripple spreads. */
+  async tapFeedback(cell: number): Promise<void> {
     const v = this.buds[cell];
-    const dur = tuning.feel.tapPopMs;
-    void this.tw.to(dur, (t) => v.budC.scale.set(1 + 0.22 * Math.sin(Math.PI * t)), { ease: ease.linear });
-    const ring = new Graphics().circle(0, 0, this.s).stroke({ width: Math.max(1.5, this.s * 0.05), color: 0xcfe8ff });
-    ring.position.copyFrom(v.position);
-    this.under.addChild(ring);
+    const f = tuning.feel;
+    if (f.vibrateTapMs > 0) navigator.vibrate?.(f.vibrateTapMs);
+    const drop = new Sprite(dropTexture());
+    drop.anchor.set(0.5, 1);
+    drop.tint = palette.drop;
+    drop.width = this.s * 0.26;
+    drop.height = this.s * 0.34;
+    this.fx.addChild(drop);
+    await this.tw.to(f.dropFallMs, (t) => {
+      drop.position.set(v.x, v.y - this.s * 0.9 * (1 - t));
+      drop.alpha = 0.4 + 0.6 * t;
+    }, { ease: ease.inCubic });
+    drop.destroy();
+    v.anim = 'pop';
+    void this.tw.to(f.tapPopMs, (t) => v.budC.scale.set(v.jitterScale * (1 + 0.18 * Math.sin(Math.PI * t))), { ease: ease.linear }).then(() => (v.anim = ''));
+    this.ripple(v.x, v.y, palette.drop, 0.55);
+  }
+
+  private ripple(x: number, y: number, color: number, alpha: number): void {
+    const ring = new Sprite(glowTexture());
+    ring.anchor.set(0.5);
+    ring.blendMode = 'add';
+    ring.tint = color;
+    ring.position.set(x, y);
+    this.light.addChild(ring);
     void this.tw.to(520, (t) => {
-      ring.scale.set(0.35 + t * 0.85);
-      ring.alpha = 0.7 * (1 - t);
+      ring.width = ring.height = this.s * (0.6 + 1.8 * t);
+      ring.alpha = alpha * (1 - t);
     }).then(() => ring.destroy());
   }
 
-  /** Replays a resolved tap step by step. Resolves when the last petal has landed. */
-  async playChain(result: TapResult, hooks: PlayHooks): Promise<void> {
-    const f = tuning.feel;
-    const tapped = this.buds[result.tapped];
-    tapped.setPetals(Math.min(MAX_PETALS, tapped.petals + 1));
-    if (result.steps.length === 0) return;
-    await this.tw.wait(f.firstStepDelayMs);
-
-    let n = 0;
-    let stepMs = f.chainStepMs;
-    for (const step of result.steps) {
-      step.blooms.forEach((cell, j) => {
-        const delay = j * tuning.audio.noteStaggerMs;
-        const k = n++;
-        hooks.onBloom(k, cell, delay);
-        if (delay > 0) void this.tw.wait(delay).then(() => this.bloom(cell, k));
-        else this.bloom(cell, k);
-      });
-      const flight = Math.min(f.petalFlightMs, stepMs * 0.95);
-      const colorOf = new Map(step.blooms.map((c, j) => [c, palette.bloom[(n - step.blooms.length + j) % palette.bloom.length]]));
-      for (const tr of step.transfers) this.flyPetal(tr.from, tr.dir, tr.to, tr.landed, colorOf.get(tr.from) ?? 0xffffff, flight);
-      await this.tw.wait(Math.max(stepMs, flight + 20));
-      stepMs = Math.max(f.chainStepMinMs, stepMs * f.chainAccel);
-    }
+  /** Add the tapped petal once the drop has landed. */
+  addTappedPetal(cell: number): void {
+    const v = this.buds[cell];
+    v.setPetals(Math.min(MAX_PETALS, v.petals + 1));
   }
 
-  private bloom(cell: number, k: number): void {
-    const v = this.buds[cell];
+  /** Replays a resolved tap on its note-grid schedule. Resolves when the cascade has settled. */
+  async playChain(result: TapResult, sched: ChainSchedule, hooks: PlayHooks): Promise<void> {
     const f = tuning.feel;
-    const color = palette.bloom[k % palette.bloom.length];
+    if (result.steps.length === 0) return;
+    const inChain = new Set([result.tapped, ...result.bloomed]);
+    this.dimmed = new Set(this.buds.map((_, i) => i).filter((i) => !inChain.has(i)));
+    if (!REDUCED_MOTION) this.zoomTarget = 1 + f.cascadeZoom;
+    const opened: number[] = [];
+    const jobs: Promise<void>[] = [];
+
+    for (const cue of sched.cues) {
+      jobs.push(
+        this.tw.wait(cue.at).then(() => {
+          this.bloom(cue, hooks);
+          opened.push(cue.cell);
+          let cx = 0;
+          let cy = 0;
+          for (const c of opened) {
+            cx += this.buds[c].x;
+            cy += this.buds[c].y;
+          }
+          const n = opened.length;
+          this.chainTarget = {
+            x: cx / n,
+            y: cy / n,
+            size: Math.min(14, 2 + f.chainLightSizePerBloom * n) * this.s,
+            alpha: Math.min(f.chainLightMaxAlpha, f.chainLightAlphaPerBloom * n),
+          };
+          const g = this.buds[cue.cell].getGlobalPosition();
+          hooks.onBloom(cue, g.x, g.y);
+        }),
+      );
+    }
+    // Held breath: the light swells while the last petals hang in the air.
+    if (sched.holdWave > 0) {
+      void this.tw.wait(sched.waveAt[sched.holdWave - 1] + sched.sixteenthMs).then(() => {
+        this.chainTarget = { ...this.chainTarget, size: this.chainTarget.size * 1.2, alpha: Math.min(0.45, this.chainTarget.alpha * 1.2) };
+      });
+    }
+
+    const cueOf = new Map(sched.cues.map((c) => [c.cell, c]));
+    let flightsEnd = 0;
+    result.steps.forEach((step, w) => {
+      const nextAt = sched.waveAt[w + 1];
+      for (const tr of step.transfers) {
+        const src = cueOf.get(tr.from)!;
+        const start = src.at + 30;
+        const dur = nextAt !== undefined ? Math.max(100, nextAt - start) : f.petalFlightMs;
+        flightsEnd = Math.max(flightsEnd, start + dur);
+        const color = palette.bloom[src.k % palette.bloom.length];
+        jobs.push(this.tw.wait(start).then(() => this.flyPetal(tr.from, tr.dir, tr.to, tr.landed, color, dur)));
+      }
+    });
+
+    jobs.push(this.tw.wait(Math.max(sched.lastAt + f.bloomOpenMs * 0.6, flightsEnd)));
+    await Promise.all(jobs);
+    this.settle();
+  }
+
+  /** The cascade is over: light fades, the board breathes back out, dimmed buds return. */
+  settle(): void {
+    this.dimmed.clear();
+    this.zoomTarget = 1;
+    this.chainTarget = { ...this.chainTarget, alpha: 0 };
+  }
+
+  private bloom(cue: BloomCue, hooks: PlayHooks): void {
+    const v = this.buds[cue.cell];
+    const f = tuning.feel;
+    const color = palette.bloom[cue.k % palette.bloom.length];
     v.isOpen = true;
     v.petals = 0;
-    v.budC.visible = false;
     v.arrowsG.visible = false;
-    v.drawFlower(color);
-    v.flower.visible = true;
-    v.flower.alpha = 1;
-    void this.tw.to(f.bloomOpenMs, (t) => {
-      v.flower.scale.set(0.15 + 0.85 * t);
-      v.flower.rotation = -0.5 * (1 - t);
-    }, { ease: ease.outElastic }).then(() =>
-      this.tw.to(700, (t) => {
-        v.flower.alpha = 1 - 0.45 * t;
-        v.flower.scale.set(1 - 0.22 * t);
-      }, { ease: ease.inOutSine }),
-    );
+    v.halo.alpha = 0;
+    v.anim = 'squash';
+    // Squash, then open through one overshoot.
+    void this.tw.to(f.squashMs, (t) => {
+      v.budC.scale.set(v.jitterScale * (1 - (1 - f.squashScale) * t));
+      v.budC.tint = 0xe6e6e6;
+    }, { ease: ease.outCubic }).then(() => {
+      v.budC.visible = false;
+      v.anim = '';
+      v.budC.tint = 0xffffff;
+      v.setFlower(color);
+      v.flower.visible = true;
+      v.flower.alpha = 1;
+      const o = f.bloomOvershoot;
+      void this.tw.to(f.bloomOpenMs, (t) => {
+        const sc = t < 0.45 ? 0.9 + (o - 0.9) * ease.outCubic(t / 0.45) : o + (1 - o) * ease.inOutSine((t - 0.45) / 0.55);
+        v.flower.scale.set(sc);
+        v.unfold(t * f.bloomOpenMs);
+      }, { ease: ease.linear });
 
-    const burst = new Sprite(glowTexture());
-    burst.anchor.set(0.5);
-    burst.blendMode = 'add';
-    burst.tint = color;
-    burst.position.copyFrom(v.position);
-    this.over.addChild(burst);
-    void this.tw.to(650, (t) => {
-      burst.width = burst.height = this.s * (1.2 + 2.6 * t);
-      burst.alpha = 0.95 * (1 - t);
-    }).then(() => burst.destroy());
+      const halo = new Sprite(glowTexture());
+      halo.anchor.set(0.5);
+      halo.blendMode = 'add';
+      halo.tint = color;
+      halo.position.copyFrom(v.position);
+      halo.width = halo.height = this.s * 3.2;
+      this.light.addChild(halo);
+      v.bloomHalo?.destroy();
+      v.bloomHalo = halo;
+      const [a0, a1] = f.haloOpenAlpha;
+      void this.tw.to(f.haloOpenMs, (t) => {
+        if (!halo.destroyed) halo.alpha = a0 + (a1 - a0) * t;
+      });
 
-    for (let p = 0; p < 9; p++) {
-      const dot = new Sprite(glowTexture());
-      dot.anchor.set(0.5);
-      dot.blendMode = 'add';
-      dot.tint = p % 3 === 0 ? 0xffffff : color;
-      dot.position.copyFrom(v.position);
+      this.motes(v.x, v.y, color, hooks, cue.k);
+    });
+  }
+
+  private spawnOk(n: number): number {
+    const cap = tuning.feel.particleCap;
+    const want = REDUCED_MOTION ? Math.ceil(n / 2) : n;
+    return Math.max(0, Math.min(want, cap - this.particles));
+  }
+
+  private glowDot(color: number, size: number, layer: Container = this.fx): Sprite {
+    const d = new Sprite(glowTexture());
+    d.anchor.set(0.5);
+    d.blendMode = 'add';
+    d.tint = color;
+    d.width = d.height = size;
+    layer.addChild(d);
+    this.particles++;
+    d.on('destroyed', () => this.particles--);
+    return d;
+  }
+
+  /** Pollen motes rise and scatter; a few fly to the HUD counter. */
+  private motes(x: number, y: number, color: number, hooks: PlayHooks, k: number): void {
+    const f = tuning.feel;
+    const n = this.spawnOk(f.pollenMotesPerBloom);
+    for (let i = 0; i < n; i++) {
+      const d = this.glowDot(i % 3 === 0 ? color : palette.pollen, 6 + Math.random() * 6);
       const a = Math.random() * Math.PI * 2;
-      const dist = this.s * (0.8 + Math.random() * 0.9);
-      const size = this.s * (0.18 + Math.random() * 0.16);
-      this.over.addChild(dot);
-      void this.tw.to(550 + Math.random() * 400, (t) => {
-        dot.position.set(v.x + Math.cos(a) * dist * t, v.y + Math.sin(a) * dist * t - this.s * 0.3 * t * t);
-        dot.width = dot.height = size * (1 - 0.5 * t);
-        dot.alpha = 1 - t;
-      }).then(() => dot.destroy());
+      const dist = this.s * (0.5 + Math.random() * 0.9);
+      void this.tw.to(900, (t) => {
+        d.position.set(x + Math.cos(a) * dist * t, y + Math.sin(a) * dist * t * 0.6 - this.s * 0.8 * t);
+        d.alpha = (1 - t) * 0.9;
+      }).then(() => d.destroy());
+    }
+    if (k >= 8 || !hooks.toHud) return;
+    const from = this.toGlobal({ x, y });
+    for (let i = 0; i < f.pollenToHudMotes; i++) {
+      const d = this.glowDot(palette.pollen, 12, this.overlay);
+      d.position.set(from.x, from.y);
+      d.alpha = 0;
+      const side = (Math.random() - 0.5) * 160;
+      void this.tw.to(f.pollenFlightMs, (t) => {
+        const to = hooks.pollenTarget();
+        const cx = (from.x + to.x) / 2 + side;
+        const cy = Math.min(from.y, to.y) - 40;
+        const u = 1 - t;
+        d.position.set(u * u * from.x + 2 * u * t * cx + t * t * to.x, u * u * from.y + 2 * u * t * cy + t * t * to.y);
+        d.alpha = Math.min(1, t * 6);
+        d.width = d.height = 12 - 4 * t;
+      }, { delay: 120 + i * f.pollenFlightStaggerMs, ease: ease.inOutSine }).then(() => {
+        d.destroy();
+        hooks.onMote();
+      });
     }
   }
 
   private flyPetal(from: number, dir: number, to: number, landed: boolean, color: number, ms: number): void {
     const a = this.buds[from].position;
-    const ang = dirAngle(dir);
+    const ang = dirAngle(dir) + this.rot;
     const dist = Math.sqrt(3) * this.s;
     const bx = to >= 0 ? this.buds[to].x : a.x + Math.cos(ang) * dist * 0.75;
     const by = to >= 0 ? this.buds[to].y : a.y + Math.sin(ang) * dist * 0.75;
@@ -203,34 +413,49 @@ export class GardenView extends Container {
     const cy = (a.y + by) / 2 + Math.cos(ang) * arc;
     const ax = a.x;
     const ay = a.y;
-
-    const trail = new Graphics()
-      .moveTo(ax, ay)
-      .quadraticCurveTo(cx, cy, bx, by)
-      .stroke({ width: this.s * 0.09, color, alpha: 0.55, cap: 'round' });
-    trail.blendMode = 'add';
-    this.under.addChild(trail);
-    void this.tw.to(ms + 650, (t) => (trail.alpha = 1 - t), { ease: ease.inCubic }).then(() => trail.destroy());
-
-    const petal = drawPetal(new Graphics(), 0, this.s * 0.34, this.s * 0.13, -this.s * 0.17).fill({ color });
-    this.over.addChild(petal);
-    void this.tw.to(ms, (t) => {
+    const at = (t: number) => {
       const u = 1 - t;
-      petal.position.set(u * u * ax + 2 * u * t * cx + t * t * bx, u * u * ay + 2 * u * t * cy + t * t * by);
+      return { x: u * u * ax + 2 * u * t * cx + t * t * bx, y: u * u * ay + 2 * u * t * cy + t * t * by };
+    };
+
+    const trail = [0, 1, 2].map((i) => this.glowDot(color, this.s * (0.22 - i * 0.05)));
+    const petal = petalSprite();
+    petal.tint = color;
+    shapePetal(petal, this.s * 0.34, this.s * 0.13, 0, 0);
+    petal.anchor.set(0.5);
+    this.fx.addChild(petal);
+    void this.tw.to(ms, (t) => {
+      const p = at(t);
+      petal.position.set(p.x, p.y);
       petal.rotation = ang + 1.2 * (t - 0.5);
+      trail.forEach((d, i) => {
+        const q = at(Math.max(0, t - 0.08 * (i + 1)));
+        d.position.set(q.x, q.y);
+        d.alpha = 0.6 - i * 0.18;
+      });
     }, { ease: ease.inOutSine }).then(() => {
+      for (const d of trail) {
+        void this.tw.to(180, (t) => (d.alpha *= 1 - t)).then(() => d.destroy());
+      }
       if (landed) {
         petal.destroy();
         const v = this.buds[to];
         v.setPetals(Math.min(MAX_PETALS, v.petals + 1));
-        void this.tw.to(220, (t) => v.budC.scale.set(1 + 0.25 * Math.sin(Math.PI * t)), { ease: ease.linear });
+        v.anim = 'pop';
+        void this.tw.to(200, (t) => v.budC.scale.set(v.jitterScale * (1 + 0.2 * Math.sin(Math.PI * t))), { ease: ease.linear }).then(() => {
+          if (v.anim === 'pop') v.anim = '';
+        });
         return;
       }
+      // Lost petals flutter down and fade.
       const x0 = petal.x;
       const y0 = petal.y;
-      void this.tw.to(700, (t) => {
-        petal.position.set(x0 + Math.sin(t * 6) * this.s * 0.12, y0 + t * this.s * 0.7);
-        petal.rotation += 0.05;
+      const r0 = petal.rotation;
+      const fall = tuning.feel.fallenPetalMs;
+      void this.tw.to(fall, (t) => {
+        const ft = Math.min(1, (t * fall) / 1200);
+        petal.position.set(x0 + Math.sin(ft * 9) * this.s * 0.15, y0 + ft * this.s * 0.9);
+        petal.rotation = r0 + Math.sin(ft * 7) * 0.35;
         petal.alpha = 1 - t;
       }, { ease: ease.linear }).then(() => petal.destroy());
     });
@@ -249,25 +474,52 @@ export class GardenView extends Container {
     const jobs = sprouts.map(({ cell, bud }, j) => {
       const v = this.buds[cell];
       const delay = j * 35;
-      const fade = this.tw.to(300, (t) => {
-        v.flower.alpha = 0.55 * (1 - t);
-        v.flower.scale.set(0.78 - 0.4 * t);
-      }, { delay });
-      return this.tw.wait(delay + 120).then(() => {
+      const halo = v.bloomHalo;
+      v.bloomHalo = null;
+      const h0 = halo?.alpha ?? 0;
+      const fade = this.tw.to(320, (t) => {
+        v.flower.alpha = 1 - t;
+        v.flower.scale.set(1 - 0.35 * t);
+        if (halo && !halo.destroyed) halo.alpha = h0 * (1 - t);
+      }, { delay }).then(() => halo?.destroy());
+      return this.tw.wait(delay + 140).then(() => {
         v.isOpen = false;
         v.setBud(bud);
         v.budC.visible = true;
         v.arrowsG.visible = true;
         v.arrowsG.alpha = 0;
+        v.anim = 'grow';
         v.budC.scale.set(0);
-        return Promise.all([
-          fade,
-          this.tw.to(f.sproutMs, (t) => v.budC.scale.set(t), { ease: ease.outBack }),
-        ]);
+        this.dust(v.x, v.y);
+        return Promise.all([fade, this.tw.to(f.sproutMs, (t) => v.budC.scale.set(t * v.jitterScale), { ease: ease.outBack })]);
       }).then(() => {
         v.flower.visible = false;
+        v.anim = '';
       });
     });
     await Promise.all(jobs);
+  }
+
+  private dust(x: number, y: number): void {
+    const n = this.spawnOk(4);
+    for (let i = 0; i < n; i++) {
+      const d = this.glowDot(0xd8e0c8, 6);
+      const a = -Math.PI / 2 + (i - 1.5) * 0.6;
+      void this.tw.to(600, (t) => {
+        d.position.set(x + Math.cos(a) * this.s * 0.4 * t, y + this.s * 0.1 + Math.sin(a) * this.s * 0.25 * t);
+        d.alpha = 0.5 * (1 - t);
+      }).then(() => d.destroy());
+    }
+  }
+
+  /** Title moment: the board sprouts cell by cell, centre outward. */
+  sproutIn(): void {
+    const order = this.buds.map((_, i) => i).sort((a, b) => Math.hypot(this.buds[a].x, this.buds[a].y) - Math.hypot(this.buds[b].x, this.buds[b].y));
+    order.forEach((i, j) => {
+      const v = this.buds[i];
+      v.anim = 'grow';
+      v.budC.scale.set(0);
+      void this.tw.to(tuning.feel.sproutMs, (t) => v.budC.scale.set(t * v.jitterScale), { delay: 200 + j * 12, ease: ease.outBack }).then(() => (v.anim = ''));
+    });
   }
 }
