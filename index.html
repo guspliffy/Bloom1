@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#120f26" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Bloom" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-180.png" />
+    <title>Bloom</title>
+  </head>
+  <body>
+    <div id="hud">
+      <div class="top">
+        <div class="stat drops" id="drops" title="Drops left">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5C9 7 5.5 10.6 5.5 14.6a6.5 6.5 0 0 0 13 0C18.5 10.6 15 7 12 2.5Z" /></svg>
+          <span class="value">10</span>
+        </div>
+        <div class="stat pollen" id="pollen"><span class="value">0</span><span class="label">pollen</span></div>
+        <div class="mood" id="mood" title="How wild the next sprouts are">Lively</div>
+      </div>
+      <div class="chain" id="chain"><span class="n">0</span><span class="label">blooms</span></div>
+      <div class="toast" id="toast"></div>
+      <div class="bottom">
+        <button id="btn-new" aria-label="New garden" title="New garden">
+          <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" /></svg>
+        </button>
+        <button id="btn-sound" aria-label="Sound on or off" title="Sound">
+          <svg viewBox="0 0 24 24" class="on"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" /></svg>
+          <svg viewBox="0 0 24 24" class="off"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="m16.5 9.5 5 5m0-5-5 5" /></svg>
+        </button>
+        <button id="btn-full" aria-label="Full screen" title="Full screen">
+          <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+        </button>
+      </div>
+      <div class="overlay hidden" id="summary">
+        <div class="card">
+          <h1>The garden rests</h1>
+          <div class="big"><span id="sum-pollen">0</span><small>pollen</small></div>
+          <div class="best" id="sum-best"></div>
+          <div class="grid">
+            <div><b id="sum-longest">0</b><span>longest chain</span></div>
+            <div><b id="sum-blooms">0</b><span>flowers bloomed</span></div>
+            <div><b id="sum-taps">0</b><span>drops used</span></div>
+            <div><b id="sum-eff">–</b><span>of the best chains</span></div>
+          </div>
+          <button id="btn-again" class="primary">Plant a new garden</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

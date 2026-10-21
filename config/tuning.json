@@ -1,0 +1,52 @@
+{
+  "board": {
+    "radius": 3
+  },
+  "run": {
+    "startDrops": 10,
+    "refundChain1": 4,
+    "refundChain2": 8,
+    "refundChain3": 12
+  },
+  "score": {
+    "pollenPerBloom": 10
+  },
+  "sprout": {
+    "petalWeightsGentle": [0.12, 0.28, 0.35, 0.25],
+    "petalWeightsWild": [0.3, 0.35, 0.25, 0.1],
+    "alignGentle": 1.6,
+    "alignWild": 0.15
+  },
+  "adapt": {
+    "start": 0.35,
+    "step": 0.12,
+    "goodRatio": 0.8,
+    "poorRatio": 0.4,
+    "streak": 2
+  },
+  "feel": {
+    "tapPopMs": 160,
+    "firstStepDelayMs": 140,
+    "chainStepMs": 230,
+    "chainStepMinMs": 120,
+    "chainAccel": 0.93,
+    "petalFlightMs": 260,
+    "petalArc": 0.35,
+    "bloomOpenMs": 520,
+    "sproutDelayMs": 260,
+    "sproutMs": 420,
+    "readyPulseHz": 0.8,
+    "floatTextMs": 1300,
+    "vibrateMs": 8
+  },
+  "audio": {
+    "masterVolume": 0.55,
+    "rootMidi": 60,
+    "noteSteps": 12,
+    "noteDecay": 1.6,
+    "noteStaggerMs": 55,
+    "reverbMix": 0.32,
+    "delayMix": 0.16,
+    "tapVolume": 0.35
+  }
+}
