@@ -90,11 +90,11 @@ export class BudView extends Container {
         .stroke({ width: Math.max(1, s * 0.045), color: palette.arrow, alpha: 0.3, cap: 'round' });
       const tip = s * 0.74;
       const base = s * 0.52;
-      const w = s * 0.14;
+      const w = s * 0.16;
       const notch = base + s * 0.08;
       g.poly([c * tip, n * tip, c * base - n * w, n * base + c * w, c * notch, n * notch, c * base + n * w, n * base - c * w]).fill({
         color: palette.arrow,
-        alpha: 0.75,
+        alpha: 0.85,
       });
     }
   }
