@@ -351,10 +351,17 @@ APACHE
     fi
     want_cert apache
 
-  elif ! listening 80 && ! listening 443; then
+  elif { have caddy && systemctl is-active --quiet caddy; } || { ! listening 80 && ! listening 443; }; then
     WEB=caddy
-    info "ports 80 and 443 are free: installing Caddy, which gets the HTTPS certificate by itself"
     local fresh=0
+    if have caddy && systemctl is-active --quiet caddy; then
+      info "Caddy is already running: adding a separate site for $HOST next to the existing ones"
+      # Only a Caddy run by its stock service from /etc/caddy/Caddyfile can be extended safely by an import line.
+      [ -f /etc/caddy/Caddyfile ] && systemctl cat caddy 2>/dev/null | grep -q -- '--config /etc/caddy/Caddyfile' \
+        || die "Caddy is running, but not from /etc/caddy/Caddyfile, so this installer cannot add a site to it. Nothing on the web side was changed. Send this message to Claude."
+    else
+      info "ports 80 and 443 are free: installing Caddy, which gets the HTTPS certificate by itself"
+    fi
     if ! have caddy; then
       fresh=1
       run apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl gpg
@@ -381,20 +388,32 @@ CADDY
     if [ "$DRY" = 1 ]; then
       info "[dry run] would make /etc/caddy/Caddyfile import /etc/caddy/bloom.caddy, validate and start Caddy"
     else
+      local backup=/etc/caddy/Caddyfile.before-bloom appended=0
       if [ "$fresh" = 1 ] && [ -f /etc/caddy/Caddyfile ]; then
         # Caddy was just installed by us, so the Caddyfile is only the package's sample.
         cp -n /etc/caddy/Caddyfile /etc/caddy/Caddyfile.original || true
         echo "import /etc/caddy/bloom.caddy" >/etc/caddy/Caddyfile
       elif ! grep -qs 'import /etc/caddy/bloom.caddy' /etc/caddy/Caddyfile; then
-        echo "import /etc/caddy/bloom.caddy" >>/etc/caddy/Caddyfile
+        # The one change to a file that is not ours: a single import line at the end, with a copy kept first.
+        cp /etc/caddy/Caddyfile "$backup"
+        appended=1
+        info "added one line to /etc/caddy/Caddyfile (the original is kept as $backup)"
+        printf '\n# %s\nimport /etc/caddy/bloom.caddy\n' "$MARK" >>/etc/caddy/Caddyfile
       fi
-      if ! caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
-        caddy validate --config /etc/caddy/Caddyfile >&2 || true
+      if ! caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
+        caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile >&2 || true
         rm -f /etc/caddy/bloom.caddy
-        die "Caddy rejected the config; the Bloom block was removed again. Send the message above to Claude."
+        # Undo only the line added in this run, so later edits of the owner's are never rolled back.
+        if [ "$appended" = 1 ]; then cp "$backup" /etc/caddy/Caddyfile; fi
+        die "Caddy rejected the config, so the Bloom site was removed again and your Caddyfile restored. Send the message above to Claude."
       fi
       systemctl enable caddy >/dev/null 2>&1 || true
-      systemctl restart caddy
+      if [ "$fresh" = 1 ]; then
+        systemctl restart caddy
+      else
+        # A reload keeps the sites that are already running online.
+        systemctl reload caddy
+      fi
     fi
     CERT_OK=1   # Caddy requests the certificate by itself; the check at the end confirms it.
 
