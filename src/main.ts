@@ -1,3 +1,4 @@
+import { resolveTap } from './core/rules';
 import { Application, Container } from 'pixi.js';
 import { Synth } from './audio/synth';
 import { bestSingleTap } from './core/solver';
@@ -116,7 +117,21 @@ async function boot(): Promise<void> {
       for (let i = 0; i < b.size; i++) if (b.q[i] === q && b.r[i] === r) return garden.cellGlobal(i);
       return null;
     },
-    state: () => ({ lesson: (game as unknown as { lessonIdx: number }).lessonIdx, busy: game.busy, ended: game.run?.ended ?? false, drops: game.run?.drops, pollen: game.run?.pollen, longest: game.run?.longest }),
+    state: () => ({ gardensLit: game.run?.gardensLit, lit: game.run?.litCount, lesson: (game as unknown as { lessonIdx: number }).lessonIdx, busy: game.busy, ended: game.run?.ended ?? false, drops: game.run?.drops, pollen: game.run?.pollen, longest: game.run?.longest }),
+    /** Like the sim's lantern bot: the tap that lights or feeds the most unlit lanterns. */
+    pickLantern: () => {
+      const run = game.run!;
+      const unlit = run.lanterns.filter((_, k) => !run.lit[k]);
+      let pick = { cell: 0, score: -Infinity };
+      for (let i = 0; i < run.board.size; i++) {
+        const r = resolveTap(run.board, run.buds, i);
+        const lights = unlit.filter((c) => r.bloomed.includes(c)).length;
+        const fill = unlit.reduce((a, c) => a + (r.bloomed.includes(c) ? 0 : r.petals[c] - run.buds[c].petals), 0);
+        const sc = lights * 100 + fill * 8 + r.bloomed.length;
+        if (sc > pick.score) pick = { cell: i, score: sc };
+      }
+      return garden.cellGlobal(pick.cell);
+    },
     pick: () => {
       const run = game.run!;
       const best = bestSingleTap(run.board, run.buds);

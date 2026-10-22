@@ -36,6 +36,8 @@ export const palette = {
   ready: 0xffb760,
   arrow: 0xf3ecff,
   leaf: 0x2f5a46,
+  lanternIron: 0x2a2026,
+  ink: 0xf4eefc,
   leafReady: 0x3f6a4c,
   /** Open-flower hues walk along a chain, one per bloom. */
   bloom: [0xff8fb8, 0xffa47a, 0xffd36e, 0xb5ec8a, 0x82e0e6, 0x9fb2ff, 0xd59cff],

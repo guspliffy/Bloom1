@@ -8,6 +8,7 @@ import { tuning } from '../tuning';
 import { bedTexture } from './bed';
 import { BudView, petalSprite, shapePetal } from './budView';
 import { dropTexture, glowTexture } from './textures';
+import { LanternView } from './lantern';
 import { palette } from './palette';
 import { ease, type Tweener } from './tween';
 
@@ -28,6 +29,8 @@ export interface PlayHooks {
   onMote(): void;
   /** Send motes to the HUD counter (off in the tutorial, where the counter is hidden). */
   toHud: boolean;
+  /** A lantern's bud opened and the lantern lights. */
+  onLantern?(cell: number): void;
 }
 
 /** Draws the garden bed and buds, and replays a resolved tap as a cascade of light on the note grid. */
@@ -51,6 +54,9 @@ export class GardenView extends Container {
   private fx = new Container();
   /** Fallen petals that show why a chain stopped; cleared with the garden. */
   private marks = new Container();
+  private lanternLayer = new Container();
+  private lanterns = new Map<number, LanternView>();
+  private flare = 0;
   private chainLight = new Sprite(glowTexture());
   private chainTarget = { x: 0, y: 0, size: 0, alpha: 0 };
   private dimmed = new Set<number>();
@@ -78,7 +84,7 @@ export class GardenView extends Container {
     this.chainLight.tint = palette.cascadeLight;
     this.chainLight.alpha = 0;
     this.light.addChild(this.chainLight);
-    this.addChild(this.bed, this.light, this.budLayer, this.marks, this.previewG, this.fx);
+    this.addChild(this.bed, this.light, this.budLayer, this.lanternLayer, this.marks, this.previewG, this.fx);
     if (typeof window !== 'undefined') {
       window.addEventListener('pointermove', (e) => this.pointerMove(e));
       window.addEventListener('pointerup', (e) => this.pointerUp(e, false));
@@ -205,6 +211,7 @@ export class GardenView extends Container {
       b.destroy({ children: true });
     }
     for (const m of this.marks.removeChildren()) m.destroy();
+    this.setLanterns([], []);
     this.dimmed.clear();
     this.restDim = false;
     this.preview = null;
@@ -221,6 +228,33 @@ export class GardenView extends Container {
       return v;
     });
     this.place();
+  }
+
+  /** The garden's lanterns; `lit[k]` for `cells[k]`. */
+  setLanterns(cells: readonly number[], lit: readonly boolean[]): void {
+    for (const l of this.lanternLayer.removeChildren()) l.destroy({ children: true });
+    this.lanterns.clear();
+    cells.forEach((c, k) => {
+      const l = new LanternView(c);
+      if (lit[k]) l.lightNow();
+      this.lanterns.set(c, l);
+      this.lanternLayer.addChild(l);
+    });
+    this.placeLanterns();
+  }
+
+  private placeLanterns(): void {
+    for (const l of this.lanterns.values()) {
+      const b = this.buds[l.cell];
+      if (b) l.layout(b.x, b.y, this.s, this.rot);
+    }
+  }
+
+  /** Every lantern flares together when the garden is lit. */
+  async flareLanterns(): Promise<void> {
+    this.flare = 1;
+    this.ripple(0, 0, palette.pollen, 0.35);
+    await this.tw.to(1400, (t) => (this.flare = 1 - t), { ease: ease.inOutSine });
   }
 
   /** Fit bed and board into the box. Portrait screens turn the board 30°, which fits them better. */
@@ -241,6 +275,7 @@ export class GardenView extends Container {
       if (b.isOpen && b.bloomHalo) b.bloomHalo.width = b.bloomHalo.height = this.s * 3.2;
     }
     this.place();
+    this.placeLanterns();
     const res = Math.min(2, window.devicePixelRatio || 1);
     this.bed.texture = bedTexture(R, this.s, this.rot, this.buds.map((b) => ({ x: b.x, y: b.y })), res);
     this.bed.scale.set(1 / res);
@@ -319,6 +354,8 @@ export class GardenView extends Container {
       else if (hover) v.arrowsG.tint = palette.arrow;
       v.arrowsG.scale.set(hinted && this.highlightArrows ? 1 + 0.12 * pulse : ready ? 1 + f.readyBreathe * pulse : 1);
     }
+
+    for (const l of this.lanterns.values()) l.tick(t, this.flare);
 
     const ct = this.chainTarget;
     const ck = Math.min(1, dtMs / 300);
@@ -458,6 +495,11 @@ export class GardenView extends Container {
     const grow = 1 + f.flowerGrowPerBloom * Math.min(cue.k, f.flowerGrowMaxK);
     v.isOpen = true;
     v.petals = 0;
+    const lantern = this.lanterns.get(cue.cell);
+    if (lantern && !lantern.lit) {
+      void lantern.light(this.tw);
+      hooks.onLantern?.(cue.cell);
+    }
     v.arrowsG.visible = false;
     v.halo.alpha = 0;
     v.anim = 'squash';

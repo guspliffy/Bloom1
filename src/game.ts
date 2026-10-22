@@ -117,12 +117,14 @@ export class Game {
     this.garden.hintCells = [];
     this.garden.highlightArrows = false;
     this.garden.setGarden(this.run.board, this.run.buds);
+    this.garden.setLanterns(this.run.lanterns, this.run.lit);
+    this.hud.setLanterns(this.run.lit);
     this.hud.setStatsVisible(true);
     this.hud.setDrops(this.run.drops);
     this.hud.setPollen(0);
     this.relayout();
     this.garden.sproutIn();
-    this.hud.toast('Tap a glowing bud.');
+    this.hud.toast('Bloom the buds with lanterns.', 3400);
     this.armIdleHint();
   }
 
@@ -171,8 +173,12 @@ export class Game {
     return sched;
   }
 
-  private hooks(onMote: () => void, toHud: boolean): PlayHooks {
+  private hooks(onMote: () => void, toHud: boolean, lanterns: readonly number[] = []): PlayHooks {
     return {
+      onLantern: (cell) => {
+        this.synth.lantern();
+        this.hud.lightLantern(lanterns.indexOf(cell));
+      },
       onBloom: (cue, x, y) => {
         const hue = lerpColor(palette.bloom[cue.k % palette.bloom.length], 0xffe9c4, 0.5);
         this.hud.setChain(cue.k + 1, `#${hue.toString(16).padStart(6, '0')}`);
@@ -197,10 +203,12 @@ export class Game {
     clearTimeout(this.idleTimer);
     this.garden.hintCells = [];
     const pollenBefore = run.pollen;
+    const lanterns = [...run.lanterns];
     const out = run.tap(cell);
     const n = out.result.bloomed.length;
+    const refill = out.gardenLit ? tuning.goal.refillOnLit : 0;
     this.hud.spendDrop();
-    this.updateNight(run.drops - out.refund);
+    this.updateNight(run.drops - out.refund - refill);
 
     await this.garden.tapFeedback(cell);
     if (epoch !== this.epoch) return;
@@ -221,7 +229,7 @@ export class Game {
       if (arrived >= motes) motesDone();
     };
 
-    await this.garden.playChain(out.result, this.schedule(out.result), this.hooks(onMote, true));
+    await this.garden.playChain(out.result, this.schedule(out.result), this.hooks(onMote, true, lanterns));
     if (epoch !== this.epoch) return;
     this.hud.endChain();
 
@@ -230,7 +238,7 @@ export class Game {
       const last = this.garden.cellGlobal(out.result.bloomed[n - 1]);
       this.synth.refund();
       jobs.push(this.hud.refundDrops(out.refund, last.x, last.y, () => {}));
-      this.updateNight(run.drops);
+      this.updateNight(run.drops - refill);
     }
     if (n > 0) {
       jobs.push(this.tw.wait(tuning.feel.sproutDelayMs).then(() => (epoch === this.epoch ? this.garden.sprout(out.sprouts) : undefined)));
@@ -238,14 +246,38 @@ export class Game {
     await Promise.all(jobs);
     if (epoch !== this.epoch) return;
     this.hud.setPollen(run.pollen);
+    if (out.gardenLit) {
+      await this.gardenLit(run, out.gardenLit.stars, epoch);
+      if (epoch !== this.epoch) return;
+    } else this.garden.sync(run.buds);
     this.hud.setDrops(run.drops);
-    this.garden.sync(run.buds);
     this.busy = false;
-    if (!out.ended) this.teach(out.result);
+    if (!out.ended && !out.gardenLit) this.teach(out.result);
     if (out.ended) {
       store(FIRST_RUN_KEY, '1');
       await this.finish(run, epoch);
     } else this.armIdleHint();
+  }
+
+  /** Every lantern is lit: they flare with a chord, drops come back, and the next garden sprouts in place. */
+  private async gardenLit(run: Run, stars: number, epoch: number): Promise<void> {
+    const six = 60000 / tuning.audio.bpm / 4;
+    this.synth.chord(0, true);
+    this.synth.finale(0, six);
+    this.hud.toast(`Garden lit ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`, 2800);
+    const c = this.garden.centre();
+    await Promise.all([
+      this.garden.flareLanterns(),
+      this.tw.wait(500).then(() => this.hud.refundDrops(tuning.goal.refillOnLit, c.x, c.y, () => {})),
+    ]);
+    if (epoch !== this.epoch) return;
+    this.updateNight(run.drops);
+    this.garden.setGarden(run.board, run.buds);
+    this.garden.setLanterns(run.lanterns, run.lit);
+    this.hud.setLanterns(run.lit);
+    this.relayout();
+    this.garden.sproutIn();
+    await this.tw.wait(700);
   }
 
   /** At most one first-time line after a tap, most useful first: the score, the preview, why a chain stopped. */
@@ -310,6 +342,8 @@ export class Game {
     if (newBest) store(BEST_KEY, String(run.pollen));
     this.hud.showSummary(
       {
+        gardensLit: run.gardensLit,
+        stars: run.stars.reduce((a, b) => a + b, 0),
         pollen: run.pollen,
         best: Math.max(prev, run.pollen),
         newBest: newBest && prev > 0,

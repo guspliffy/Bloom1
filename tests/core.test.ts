@@ -10,6 +10,7 @@ import { chainPollen, chainRefund, resolveTap, type Bud } from '../src/core/rule
 import { Run } from '../src/core/run';
 import { bestSingleTap } from '../src/core/solver';
 import { chainStop } from '../src/core/stop';
+import { hexDistance, placeLanterns, ringOf, starsFor } from '../src/core/lanterns';
 
 const t = structuredClone(defaults);
 
@@ -247,5 +248,46 @@ describe('chain stop', () => {
     const kinds = chainStop(r).map((m) => m.kind);
     expect(kinds).toContain('open');
     expect(kinds).toContain('short');
+  });
+});
+
+describe('lanterns', () => {
+  const board = makeBoard(3);
+  it('places them on allowed rings, spread apart, deterministically', () => {
+    for (let seed = 1; seed < 60; seed++) {
+      const ls = placeLanterns(board, defaults.goal, new Rng(seed));
+      expect(ls.length).toBe(defaults.goal.lanterns);
+      for (const c of ls) {
+        expect(ringOf(board, c)).toBeGreaterThanOrEqual(1);
+        expect(ringOf(board, c)).toBeLessThanOrEqual(3);
+      }
+      for (const a of ls) for (const b of ls) if (a !== b) expect(hexDistance(board, a, b)).toBeGreaterThanOrEqual(defaults.goal.minDistance);
+      expect(placeLanterns(board, defaults.goal, new Rng(seed))).toEqual(ls);
+    }
+  });
+  it('scores stars by drops left', () => {
+    expect(starsFor(7, [5, 2, 0])).toBe(3);
+    expect(starsFor(3, [5, 2, 0])).toBe(2);
+    expect(starsFor(0, [5, 2, 0])).toBe(1);
+  });
+  it('lighting every lantern plants a new garden, refills drops and keeps the run going', () => {
+    const run = new Run(t, 42);
+    for (const c of run.lanterns) expect(run.buds[c].petals).toBeLessThanOrEqual(t.goal.startPetals);
+    // Make every lantern one petal from blooming, then tap them one by one.
+    const first = [...run.lanterns];
+    for (const c of first) run.buds[c] = { ...run.buds[c], petals: 3 };
+    let out = null;
+    for (const c of first) {
+      if (run.gardensLit > 0) break;
+      const before = run.drops;
+      out = run.tap(c);
+      if (!out.gardenLit) expect(out.lit).toContain(c);
+      else expect(run.drops).toBe(before - 1 + out.refund + t.goal.refillOnLit);
+    }
+    expect(run.gardensLit).toBe(1);
+    expect(out!.gardenLit!.stars).toBe(3);
+    expect(run.stars).toEqual([3]);
+    expect(run.lit.every((l) => !l)).toBe(true);
+    expect(out!.gardenLit!.buds).toBe(run.buds);
   });
 });

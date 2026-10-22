@@ -3,12 +3,17 @@ import { tuning } from './tuning';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const DROP_SVG = '<svg viewBox="0 0 12 16" aria-hidden="true"><path d="M6 1C4.4 3.6 1.5 6.6 1.5 9.9a4.5 4.5 0 0 0 9 0C10.5 6.6 7.6 3.6 6 1Z"/></svg>';
+const LANTERN_SVG =
+  '<svg viewBox="0 0 16 20" aria-hidden="true"><rect class="cap" x="5.5" y="1" width="5" height="2" rx="0.6"/>' +
+  '<path class="glass" d="M8 4.2 13 7v6.2L8 16l-5-2.8V7Z"/></svg>';
 const BLOOM_SVG =
   '<svg viewBox="0 0 16 16" aria-hidden="true">' +
   [0, 72, 144, 216, 288].map((a) => `<ellipse cx="8" cy="4.2" rx="2.4" ry="3.6" transform="rotate(${a} 8 8)"/>`).join('') +
   '<circle cx="8" cy="8" r="2" fill="#fff4d6"/></svg>';
 
 export interface Summary {
+  gardensLit: number;
+  stars: number;
   pollen: number;
   best: number;
   newBest: boolean;
@@ -20,6 +25,7 @@ export interface Summary {
 export class Hud {
   private hud = $('hud');
   private pips = $('drops');
+  private lanternsEl = $('lanterns');
   private pollen = $('pollen');
   private pollenValue = this.pollen.querySelector('.value') as HTMLElement;
   private star = this.pollen.querySelector('.star') as SVGElement;
@@ -67,6 +73,22 @@ export class Hud {
       more.textContent = `+${n - max}`;
       this.pips.appendChild(more);
     }
+  }
+
+  /** The garden's lanterns at the top centre: dark outlines, warm and glowing once lit. */
+  setLanterns(lit: readonly boolean[]): void {
+    if (this.lanternsEl.children.length !== lit.length) this.lanternsEl.innerHTML = lit.map(() => `<i>${LANTERN_SVG}</i>`).join('');
+    [...this.lanternsEl.children].forEach((el, k) => el.classList.toggle('lit', lit[k]));
+  }
+
+  /** Lantern k lights with a small pop. */
+  lightLantern(k: number): void {
+    const el = this.lanternsEl.children[k] as HTMLElement | undefined;
+    if (!el) return;
+    el.classList.add('lit');
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
   }
 
   /** A tap spends the rightmost full pip. */
@@ -182,6 +204,7 @@ export class Hud {
 
   /** The garden rests: the sheet rises and the pollen tally counts up, ticking as it goes. */
   showSummary(s: Summary, onTick: (i: number) => void): void {
+    $('sum-gardens').textContent = s.gardensLit > 0 ? `${s.gardensLit} ${s.gardensLit === 1 ? 'garden' : 'gardens'} lit · ★ ${s.stars}` : 'No garden lit this evening';
     $('sum-longest').textContent = String(s.longest);
     $('sum-blooms').textContent = String(s.blooms);
     const best = $('sum-best');

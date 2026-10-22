@@ -11,13 +11,14 @@ This build is a **comparison prototype** against Still Water: core loop plus fee
 3. **Every bloom sings.** Sound and motion carry the reward; a long chain is a melody.
 
 ## §2 Core loop
-Read the garden → tap a bud (1 drop, +1 petal) → if it reaches 4 it blooms and the cascade plays → pollen and drop refunds → bloomed cells sprout fresh buds → repeat until drops reach 0 → summary → new garden.
+Read the garden and its 3 lanterns → tap a bud (1 drop, +1 petal) → if it reaches 4 it blooms and the cascade plays → pollen, drop refunds, lanterns lit → bloomed cells sprout fresh buds → when all 3 lanterns are lit the garden is lit (stars, drops back, the next garden sprouts) → repeat until drops reach 0 → summary (gardens lit, stars, pollen) → new evening.
 
 ## §3 Mechanics
 - **Garden.** Hex board of radius `board.radius` (3 = 37 buds). Each bud holds 0 to 3 petals and has 3 arrows pointing at on-board neighbors.
 - **Tap.** Spends a drop and adds one petal. At 4 petals the bud blooms.
 - **Bloom.** Sends one petal along each arrow, then stays open for the rest of the chain. Petals that reach an open flower or leave the board fall and are lost. Any bud pushed to 4 blooms in the next step. Each cell blooms at most once per chain, so every chain ends.
 - **Sprouts.** When the chain settles, every bloomed cell sprouts a new bud (random petals and arrows from the generator).
+- **Lanterns (the goal, 2026-10-22).** Each garden has `goal.lanterns` lantern buds, on rings `goal.ring` and at least `goal.minDistance` apart, starting with at most `goal.startPetals` petals. A lantern lights when its bud blooms and stays lit. When all are lit the garden is lit: stars by drops left at that moment (`goal.stars` = minimum drops for 3/2/1), `goal.refillOnLit` drops back, and a new garden with new lanterns is planted at once. The evening's score is gardens lit and stars; pollen is second. Sim (300 runs): a lantern-playing bot lights about 2 gardens a run (stars 36% 1, 42% 2, 22% 3); a bot that only takes the longest chain lights 0.1. Chosen by Jonny from three "catch" options (the others, aiming the drop and midnight blooms, are in the backlog).
 - **Score.** A chain of n blooms gives `score.pollenPerBloom × n(n+1)/2` pollen, so long chains are worth far more than many short ones.
 - **Drops.** A run starts with `run.startDrops`. Chains of at least `run.refundChain1/2/3` blooms give back 1/2/3 drops in total. The run ends at 0 drops.
 - **Generator.** Sprout petal counts are drawn from weights that blend from `sprout.petalWeightsGentle` to `sprout.petalWeightsWild` by difficulty. Arrows lean toward fuller neighbors with strength `alignGentle` → `alignWild`.
@@ -123,6 +124,8 @@ Buttons: "Back to the garden" (primary: buttonFace gradient, buttonInk, 52 px pi
 **Tutorial presentation.** Coach line in a pill at the top: Nunito 600 17 px, ink, rgba(12,10,28,.55) background, 1 px rgba(255,255,255,.08) rim, 40 px tall, fading in 200 ms. Progress: four 10 px seed dots above the pill; a passed lesson's dot blooms into a 5-petal glyph in pollen colour over 300 ms. Hint ring: additive ring 1.7s, 2 px, #ffe9c4, breathing alpha 0.4–0.9 at 1 Hz, plus a drop glyph bobbing 4 px at 1 Hz 0.7s above the bud: a drop waits here. In lessons the ring pulses the ready bud's own chevrons (scale 1 + 0.12·pulse) as before. Lesson gardens use the same scene and bed at their own size.
 
 ## §8 Backlog
+- Aim the drop: hold a ready bud and slide toward a neighbour to send a fourth petal that way (strongest identity idea; second experiment after lanterns).
+- Midnight blooms: pollen × (1 + night) so late chains pay more.
 - Press-and-hold preview of a non-ready bud's arrows on phone.
 - Moth that lands on the last bloom of a long chain (Townscaper-style ambient life).
 - Save or share the finished garden as an image.
