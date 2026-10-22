@@ -17,7 +17,10 @@
     "refillOnLit": 4,
     "flareMs": 1400,
     "starStaggerMs": 220,
-    "starsHoldMs": 1200
+    "starsHoldMs": 1200,
+    "litGlowAlpha": 0.36,
+    "skyLift": 0.15,
+    "skyLiftMs": 1500
   },
   "score": {
     "pollenPerBloom": 10
@@ -36,8 +39,9 @@
     "streak": 2
   },
   "scene": {
-    "horizonY": 0.58,
+    "horizonY": 0.42,
     "horizonYLandscape": 0.62,
+    "bedBottomPortrait": 0.8,
     "nightLerpMs": 1800,
     "parallaxPx": [0, 6, 12, 18],
     "hedgeSwayPx": 0.8,
@@ -97,6 +101,7 @@
     "petalHalfW": 0.3,
     "petalLenSmall": 0.62,
     "leafLen": 0.42,
+    "coreRadius": [0.11, 0.15, 0.18, 0.21],
     "jitterDeg": 3,
     "jitterScale": 0.03,
     "jitterHueDeg": 3,
@@ -107,7 +112,8 @@
     "endNightMs": 1600,
     "tallyMs": 900,
     "vibrateTapMs": 10,
-    "vibrateFinale": [10, 60, 10, 60, 20]
+    "vibrateFinale": [10, 60, 10, 60, 20],
+    "lanternBeatMs": 300
   },
   "preview": {
     "depth": 1,
