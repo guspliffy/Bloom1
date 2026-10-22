@@ -6,26 +6,64 @@ const DROP_SVG = '<svg viewBox="0 0 12 16" aria-hidden="true"><path d="M6 1C4.4 
 const LANTERN_SVG =
   '<svg viewBox="0 0 16 20" aria-hidden="true"><rect class="cap" x="5.5" y="1" width="5" height="2" rx="0.6"/>' +
   '<path class="glass" d="M8 4.2 13 7v6.2L8 16l-5-2.8V7Z"/></svg>';
+/** The four-point pollen star, as the counter draws it. */
+const STAR_PATH = 'M12 1.5c.7 5.6 4.9 9.8 10.5 10.5-5.6.7-9.8 4.9-10.5 10.5-.7-5.6-4.9-9.8-10.5-10.5C7.1 11.3 11.3 7.1 12 1.5Z';
+const STAR_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${STAR_PATH}"/></svg>`;
 const BLOOM_SVG =
   '<svg viewBox="0 0 16 16" aria-hidden="true">' +
   [0, 72, 144, 216, 288].map((a) => `<ellipse cx="8" cy="4.2" rx="2.4" ry="3.6" transform="rotate(${a} 8 8)"/>`).join('') +
   '<circle cx="8" cy="8" r="2" fill="#fff4d6"/></svg>';
 
+/** What the end sheet needs (GDD §7 "The garden rests"). */
 export interface Summary {
-  gardensLit: number;
-  stars: number;
+  /** Stars (1..3) of each garden lit this evening, in order. */
+  stars: number[];
+  /** The garden on the board: which of its lanterns are lit. */
+  lanternsLit: boolean[];
   pollen: number;
-  best: number;
-  newBest: boolean;
   longest: number;
-  blooms: number;
+  /** Best star total of earlier evenings (`bloom.bestStars`). */
+  prevBestStars: number;
+}
+
+export interface SummaryView {
+  headline: string;
+  /** Three lantern glyphs under the headline, only when no garden was lit. */
+  glyphs: boolean[] | null;
+  /** One group of three star flags per lit garden, at most `maxGroups`. */
+  groups: boolean[][];
+  /** Gardens beyond `maxGroups`, shown as "+n". */
+  more: number;
+  best: string;
+  newBest: boolean;
+  totalStars: number;
+}
+
+export const MAX_STAR_GROUPS = 6;
+
+/** Pure content of the end sheet: gardens and stars lead, pollen is second. */
+export function summaryView(s: Summary): SummaryView {
+  const lit = s.stars.length;
+  const total = s.stars.reduce((a, b) => a + b, 0);
+  const lanterns = s.lanternsLit.filter(Boolean).length;
+  const newBest = lit > 0 && s.prevBestStars > 0 && total > s.prevBestStars;
+  return {
+    headline: lit > 0 ? `${lit} ${lit === 1 ? 'garden' : 'gardens'} lit` : `Lanterns lit ${lanterns} of ${s.lanternsLit.length}`,
+    glyphs: lit > 0 ? null : s.lanternsLit,
+    groups: s.stars.slice(0, MAX_STAR_GROUPS).map((n) => [0, 1, 2].map((i) => i < n)),
+    more: Math.max(0, lit - MAX_STAR_GROUPS),
+    best: lit === 0 ? '' : newBest ? 'New best' : `Best ★ ${Math.max(s.prevBestStars, total)}`,
+    newBest,
+    totalStars: total,
+  };
 }
 
 /** DOM overlay: drop pips, pollen counter, chain count, title, coach, toasts and the bottom sheets. */
 export class Hud {
   private hud = $('hud');
   private pips = $('drops');
-  private lanternsEl = $('lanterns');
+  private litMsg = $('lit');
+  private litStars = $('lit-stars');
   private pollen = $('pollen');
   private pollenValue = this.pollen.querySelector('.value') as HTMLElement;
   private star = this.pollen.querySelector('.star') as SVGElement;
@@ -75,22 +113,6 @@ export class Hud {
     }
   }
 
-  /** The garden's lanterns at the top centre: dark outlines, warm and glowing once lit. */
-  setLanterns(lit: readonly boolean[]): void {
-    if (this.lanternsEl.children.length !== lit.length) this.lanternsEl.innerHTML = lit.map(() => `<i>${LANTERN_SVG}</i>`).join('');
-    [...this.lanternsEl.children].forEach((el, k) => el.classList.toggle('lit', lit[k]));
-  }
-
-  /** Lantern k lights with a small pop. */
-  lightLantern(k: number): void {
-    const el = this.lanternsEl.children[k] as HTMLElement | undefined;
-    if (!el) return;
-    el.classList.add('lit');
-    el.classList.remove('pop');
-    void el.offsetWidth;
-    el.classList.add('pop');
-  }
-
   /** A tap spends the rightmost full pip. */
   spendDrop(): void {
     const i = this.drops - 1;
@@ -102,8 +124,8 @@ export class Hud {
     p.classList.add('spend');
   }
 
-  /** Refunded drops fly from (x, y) into the first empty pips, one by one. */
-  async refundDrops(count: number, x: number, y: number, onEach: () => void): Promise<void> {
+  /** Refunded drops fly from (x, y), or from `origins` in turn (the lanterns), into the first empty pips, 90 ms apart. */
+  async refundDrops(count: number, x: number, y: number, onEach: () => void, origins?: readonly { x: number; y: number }[]): Promise<void> {
     const jobs: Promise<void>[] = [];
     for (let k = 0; k < count; k++) {
       const target = Math.min(this.drops + k, tuning.hud.maxPips - 1);
@@ -115,14 +137,15 @@ export class Hud {
       el.className = 'fly-drop';
       el.innerHTML = DROP_SVG;
       document.body.appendChild(el);
-      const mx = (x + tx) / 2 + (k % 2 ? 60 : -60);
-      const my = Math.min(y, ty) - 30;
+      const from = origins && origins.length > 0 ? origins[k % origins.length] : { x, y };
+      const mx = (from.x + tx) / 2 + (k % 2 ? 60 : -60);
+      const my = Math.min(from.y, ty) - 30;
       const frames: Keyframe[] = [];
       for (let i = 0; i <= 12; i++) {
         const t = i / 12;
         const u = 1 - t;
-        const px = u * u * x + 2 * u * t * mx + t * t * tx;
-        const py = u * u * y + 2 * u * t * my + t * t * ty;
+        const px = u * u * from.x + 2 * u * t * mx + t * t * tx;
+        const py = u * u * from.y + 2 * u * t * my + t * t * ty;
         frames.push({ transform: `translate(${px}px, ${py}px) scale(${1.3 - 0.3 * t})`, opacity: t < 0.1 ? t * 10 : 1 });
       }
       el.style.left = '0';
@@ -202,16 +225,37 @@ export class Hud {
     this.toastHide = window.setTimeout(() => this.toastEl.classList.remove('show'), ms);
   }
 
-  /** The garden rests: the sheet rises and the pollen tally counts up, ticking as it goes. */
+  /** Garden lit: the words and three star outlines appear; the earned ones fill one by one (`fillLitStar`). */
+  showGardenLit(): void {
+    this.litStars.innerHTML = [0, 1, 2].map(() => `<i>${STAR_SVG}</i>`).join('');
+    this.litMsg.classList.add('show');
+  }
+
+  /** Star i fills in pollen colour with a 320 ms pop. */
+  fillLitStar(i: number): void {
+    this.litStars.children[i]?.classList.add('on');
+  }
+
+  /** Words and stars fade over 400 ms. */
+  hideGardenLit(): void {
+    this.litMsg.classList.remove('show');
+  }
+
+  /** The garden rests: the sheet rises, the pip row steps aside and the pollen tally counts up, ticking as it goes. */
   showSummary(s: Summary, onTick: (i: number) => void): void {
-    $('sum-gardens').textContent = s.gardensLit > 0 ? `${s.gardensLit} ${s.gardensLit === 1 ? 'garden' : 'gardens'} lit · ★ ${s.stars}` : 'No garden lit this evening';
+    const v = summaryView(s);
+    $('sum-gardens').textContent = v.headline;
+    $('sum-lanterns').innerHTML = (v.glyphs ?? []).map((on) => `<i class="${on ? 'lit' : ''}">${LANTERN_SVG}</i>`).join('');
+    $('sum-stars').innerHTML =
+      v.groups.map((g) => `<span class="group">${g.map((on) => `<i class="${on ? 'on' : ''}">${STAR_SVG}</i>`).join('')}</span>`).join('') +
+      (v.more > 0 ? `<span class="more">+${v.more}</span>` : '');
     $('sum-longest').textContent = String(s.longest);
-    $('sum-blooms').textContent = String(s.blooms);
     const best = $('sum-best');
-    best.textContent = s.newBest ? 'New best' : s.best > s.pollen ? `Best ${s.best}` : '';
-    best.classList.toggle('new', s.newBest);
+    best.textContent = v.best;
+    best.classList.toggle('new', v.newBest);
     const big = $('sum-pollen');
     big.textContent = '0';
+    this.hud.classList.add('resting');
     this.summary.classList.remove('hidden');
     const ms = tuning.feel.tallyMs;
     const start = performance.now() + 300;
@@ -227,6 +271,7 @@ export class Hud {
   }
 
   hideSummary(): void {
+    this.hud.classList.remove('resting');
     this.summary.classList.add('hidden');
   }
 

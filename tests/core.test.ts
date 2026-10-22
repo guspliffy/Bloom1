@@ -11,6 +11,8 @@ import { Run } from '../src/core/run';
 import { bestSingleTap } from '../src/core/solver';
 import { chainStop } from '../src/core/stop';
 import { hexDistance, placeLanterns, ringOf, starsFor } from '../src/core/lanterns';
+import { nudgeCell } from '../src/core/nudge';
+import { MAX_STAR_GROUPS, summaryView } from '../src/hud';
 
 const t = structuredClone(defaults);
 
@@ -396,5 +398,72 @@ describe('lanterns', () => {
     expect(run.stars).toEqual([3]);
     expect(run.lit.every((l) => !l)).toBe(true);
     expect(out!.gardenLit!.buds).toBe(run.buds);
+  });
+});
+
+describe('idle nudge', () => {
+  const b = makeBoard(1);
+  const X = cellIndex(b, 0, 0);
+  const Y = b.neighbors[X][0];
+  const Z = b.neighbors[X][1];
+  // Three arrows from `c` that avoid the given cells, so chains stay where the test puts them.
+  const avoiding = (c: number, cells: number[]) => [0, 1, 2, 3, 4, 5].filter((d) => !cells.includes(b.neighbors[c][d])).slice(0, 3);
+  const buds = (): Bud[] => {
+    const out: Bud[] = b.q.map(() => ({ petals: 0, arrows: [0, 2, 4] }));
+    out[X] = { petals: 3, arrows: [0, 2, 4] };
+    out[Y] = { petals: 3, arrows: avoiding(Y, [X, Z]) };
+    out[Z] = { petals: 3, arrows: avoiding(Z, [X, Y]) };
+    return out;
+  };
+
+  it('setup: the solver prefers the long chain, which does not reach the lantern bud', () => {
+    const g = buds();
+    expect(bestSingleTap(b, g).cell).toBe(X);
+    expect(resolveTap(b, g, X).bloomed).not.toContain(Z);
+    expect(resolveTap(b, g, Z).bloomed).toEqual([Z]);
+  });
+  it('prefers a bud whose chain lights a dark lantern over the longest chain', () => {
+    expect(nudgeCell(b, buds(), [Z], [false])).toBe(Z);
+  });
+  it('among chains that light a lantern, takes the longest', () => {
+    expect(nudgeCell(b, buds(), [Y], [false])).toBe(X);
+  });
+  it('ignores lit lanterns and falls back to the solver pick', () => {
+    expect(nudgeCell(b, buds(), [Z], [true])).toBe(X);
+    expect(nudgeCell(b, buds(), [cellIndex(b, -1, 0)], [false])).toBe(X);
+  });
+  it('is -1 when no bud is one petal from blooming', () => {
+    const none: Bud[] = b.q.map(() => ({ petals: 0, arrows: [0, 2, 4] }));
+    expect(nudgeCell(b, none, [Z], [false])).toBe(-1);
+  });
+});
+
+describe('end sheet', () => {
+  it('leads with gardens lit and one star group per garden', () => {
+    const v = summaryView({ stars: [3, 1], lanternsLit: [false, true, false], pollen: 120, longest: 7, prevBestStars: 6 });
+    expect(v.headline).toBe('2 gardens lit');
+    expect(v.glyphs).toBeNull();
+    expect(v.groups).toEqual([[true, true, true], [true, false, false]]);
+    expect(v.newBest).toBe(false);
+    expect(v.best).toBe('Best ★ 6');
+  });
+  it('says "1 garden lit" and "New best" when the star total beats the record', () => {
+    const v = summaryView({ stars: [3], lanternsLit: [false, false, false], pollen: 10, longest: 3, prevBestStars: 2 });
+    expect(v.headline).toBe('1 garden lit');
+    expect(v.best).toBe('New best');
+    expect(v.newBest).toBe(true);
+  });
+  it('with none lit shows the board lantern progress as glyphs, no stars and no best', () => {
+    const v = summaryView({ stars: [], lanternsLit: [true, true, false], pollen: 30, longest: 4, prevBestStars: 5 });
+    expect(v.headline).toBe('Lanterns lit 2 of 3');
+    expect(v.glyphs).toEqual([true, true, false]);
+    expect(v.groups).toEqual([]);
+    expect(v.best).toBe('');
+  });
+  it('caps star groups at six and counts the rest', () => {
+    const v = summaryView({ stars: [3, 3, 2, 2, 1, 1, 3, 2], lanternsLit: [false, false, false], pollen: 0, longest: 0, prevBestStars: 0 });
+    expect(v.groups.length).toBe(MAX_STAR_GROUPS);
+    expect(v.more).toBe(2);
+    expect(v.best).toBe('Best ★ 17');
   });
 });

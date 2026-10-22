@@ -91,7 +91,8 @@ export class GardenView extends Container {
     this.chainLight.tint = palette.cascadeLight;
     this.chainLight.alpha = 0;
     this.light.addChild(this.chainLight);
-    this.addChild(this.bed, this.light, this.budLayer, this.lanternLayer, this.marks, this.previewG, this.fx);
+    // Lantern posts stand behind the buds (GDD §6); their lit pools sit under the flower lights.
+    this.addChild(this.bed, this.lanternLayer, this.light, this.budLayer, this.marks, this.previewG, this.fx);
     if (typeof window !== 'undefined') {
       window.addEventListener('pointermove', (e) => this.pointerMove(e));
       window.addEventListener('pointerup', (e) => this.pointerUp(e, false));
@@ -213,6 +214,7 @@ export class GardenView extends Container {
 
   setGarden(board: Board, buds: readonly Bud[]): void {
     this.board = board;
+    this.alpha = 1;
     for (const b of this.buds) {
       b.bloomHalo?.destroy();
       b.destroy({ children: true });
@@ -241,17 +243,35 @@ export class GardenView extends Container {
     this.place();
   }
 
-  /** The garden's lanterns; `lit[k]` for `cells[k]`. */
-  setLanterns(cells: readonly number[], lit: readonly boolean[]): void {
+  /** The garden's lanterns; `lit[k]` for `cells[k]`. `hidden` posts stay unseen until `plantLanterns`. */
+  setLanterns(cells: readonly number[], lit: readonly boolean[], hidden = false): void {
     for (const l of this.lanternLayer.removeChildren()) l.destroy({ children: true });
     this.lanterns.clear();
     cells.forEach((c, k) => {
       const l = new LanternView(c);
       if (lit[k]) l.lightNow();
+      if (hidden) l.hide();
       this.lanterns.set(c, l);
       this.lanternLayer.addChild(l);
     });
     this.placeLanterns();
+  }
+
+  /** First-run beat: hidden posts plant one by one, `beatMs` apart; `onEach(k)` rings the bell for post k. */
+  async plantLanterns(beatMs: number, onEach: (k: number) => void): Promise<void> {
+    const jobs = [...this.lanterns.values()].map((l, k) =>
+      this.tw.wait(k * beatMs).then(() => {
+        if (l.destroyed) return;
+        onEach(k);
+        return l.plant(this.tw);
+      }),
+    );
+    await Promise.all(jobs);
+  }
+
+  /** Screen positions of the lantern panes, for fireflies and flying drops. */
+  lanternPoints(): { x: number; y: number }[] {
+    return [...this.lanterns.values()].map((l) => l.paneGlobal());
   }
 
   private placeLanterns(): void {
@@ -287,11 +307,31 @@ export class GardenView extends Container {
     return n;
   }
 
-  /** Every lantern flares together when the garden is lit. */
+  /**
+   * Every lantern flares together when the garden is lit: a quick rise, then it eases back over
+   * `goal.flareMs`, with one pollen ripple spreading from the bed centre.
+   */
   async flareLanterns(): Promise<void> {
-    this.flare = 1;
-    this.ripple(0, 0, palette.pollen, 0.35);
-    await this.tw.to(1400, (t) => (this.flare = 1 - t), { ease: ease.inOutSine });
+    this.pollenRipple();
+    await this.tw.to(tuning.goal.flareMs, (t) => (this.flare = t < 0.15 ? ease.outCubic(t / 0.15) : 1 - ease.inOutSine((t - 0.15) / 0.85)), { ease: ease.linear });
+    this.flare = 0;
+  }
+
+  /** One thin pollen ring crossing the bed from its centre (a single additive light, 700 ms). */
+  private pollenRipple(): void {
+    const ring = new Graphics();
+    ring.blendMode = 'add';
+    this.light.addChild(ring);
+    const reach = this.centre().r;
+    void this.tw.to(700, (t) => {
+      if (ring.destroyed) return;
+      ring.clear().circle(0, 0, this.s * 0.6 + reach * t).stroke({ width: Math.max(2, this.s * 0.1), color: palette.pollen, alpha: 0.4 * (1 - t) });
+    }).then(() => ring.destroy());
+  }
+
+  /** The lit garden fades out before the next one is planted. */
+  async fadeOut(ms: number): Promise<void> {
+    await this.tw.to(ms, (t) => (this.alpha = 1 - t), { ease: ease.linear });
   }
 
   /** Fit bed and board into the box. Portrait screens turn the board 30°, which fits them better. */
@@ -362,7 +402,7 @@ export class GardenView extends Container {
     for (let i = 0; i < this.buds.length; i++) {
       const v = this.buds[i];
       const ready = v.ready && v.anim !== 'grow';
-      v.halo.alpha += ((ready && !this.chainPlaying ? (0.22 + 0.22 * pulse) * haloScale : 0) - v.halo.alpha) * k;
+      v.halo.alpha += ((ready && !this.chainPlaying && !this.litDim ? (0.22 + 0.22 * pulse) * haloScale : 0) - v.halo.alpha) * k;
       if (!v.isOpen) {
         const idle = 1 + f.idleBreathe * Math.sin((t * Math.PI * 2) / v.period + v.phase);
         const breathe = ready ? 1 + f.readyBreathe * pulse : idle;
@@ -374,7 +414,7 @@ export class GardenView extends Container {
       const dimTo = this.restDim ? 0.6 : this.dimmed.has(i) ? f.cascadeDimAlpha : previewDim ? tuning.preview.dimAlpha : 1;
       v.alpha += (dimTo - v.alpha) * Math.min(1, dtMs / 250);
 
-      const hinted = !v.isOpen && !this.chainPlaying && this.hintCells.includes(i);
+      const hinted = !v.isOpen && !this.chainPlaying && !this.litDim && this.hintCells.includes(i);
       const hp = 0.5 + 0.5 * Math.sin(t * Math.PI * 2);
       v.hintRing.alpha += ((hinted ? 0.4 + 0.5 * hp : 0) - v.hintRing.alpha) * k;
       v.hintDrop.alpha += ((hinted ? 0.85 : 0) - v.hintDrop.alpha) * k;
@@ -402,7 +442,11 @@ export class GardenView extends Container {
       v.arrowsG.scale.set(baseScale * (1 + (tuning.preview.heldArrowScale - 1) * v.heldArrow));
     }
 
-    for (const l of this.lanterns.values()) l.tick(t, this.flare);
+    for (const l of this.lanterns.values()) {
+      // The lantern bud's ring joins its ready halo.
+      const bud = this.buds[l.cell];
+      l.tick(t, this.flare, bud ? Math.min(1, bud.halo.alpha / 0.3) : 0);
+    }
 
     // Open-flower halos: the latest few hold their glow, older ones sink to a faint rest over 600 ms.
     this.haloMul += ((this.litDim ? 0 : 1) - this.haloMul) * Math.min(1, dtMs / 100);
@@ -826,13 +870,13 @@ export class GardenView extends Container {
   }
 
   /** Title moment: the board sprouts cell by cell, centre outward. */
-  sproutIn(): void {
+  sproutIn(delayMs = 0): void {
     const order = this.buds.map((_, i) => i).sort((a, b) => Math.hypot(this.buds[a].x, this.buds[a].y) - Math.hypot(this.buds[b].x, this.buds[b].y));
     order.forEach((i, j) => {
       const v = this.buds[i];
       v.anim = 'grow';
       v.budC.scale.set(0);
-      void this.tw.to(tuning.feel.sproutMs, (t) => v.budC.scale.set(t * v.jitterScale), { delay: 200 + j * 12, ease: ease.outBack }).then(() => (v.anim = ''));
+      void this.tw.to(tuning.feel.sproutMs, (t) => v.budC.scale.set(t * v.jitterScale), { delay: delayMs + 200 + j * 12, ease: ease.outBack }).then(() => (v.anim = ''));
     });
   }
 }

@@ -296,10 +296,10 @@ export class Synth {
     this.voice(hz(tuning.audio.rootMidi + m + 12), 'sine', 0.9 * tuning.audio.tickVolume, 0.12, this.ctx.currentTime);
   }
 
-  /** A lantern lights: a low bell an octave under the bloom notes. */
+  /** A lantern lights (or is planted): a single bell an octave above the bloom notes. */
   lantern(delayMs = 0): void {
     if (!this.ctx || this.muted) return;
-    this.bell(pentatonicMidi(tuning.audio.rootMidi - 12, 4), this.at(delayMs), 0.9, tuning.audio.noteDecay * 1.5);
+    this.bell(pentatonicMidi(tuning.audio.rootMidi + 12, 4), this.at(delayMs), 0.8, tuning.audio.noteDecay * 1.5);
   }
 
   /** Three-note sixteenth rise for drops given back. */

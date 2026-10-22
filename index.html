@@ -20,7 +20,6 @@
     <div id="hud">
       <div class="top">
         <div class="pips" id="drops" aria-label="Drops left"></div>
-        <div class="lanterns" id="lanterns" aria-label="Lanterns lit"></div>
         <div class="pollen" id="pollen" aria-label="Pollen">
           <svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5c.7 5.6 4.9 9.8 10.5 10.5-5.6.7-9.8 4.9-10.5 10.5-.7-5.6-4.9-9.8-10.5-10.5C7.1 11.3 11.3 7.1 12 1.5Z" /></svg>
           <span class="value">0</span>
@@ -29,6 +28,7 @@
       <div class="title" id="title">Bloom</div>
       <div class="coach" id="coach"><div class="steps" id="coach-steps"></div><p id="coach-text"></p></div>
       <div class="chain" id="chain">×0</div>
+      <div class="lit" id="lit"><p>Garden lit</p><div class="lit-stars" id="lit-stars"></div></div>
       <div class="toast" id="toast"></div>
       <div class="bottom">
         <button id="btn-sound" class="glass" aria-label="Sound on or off" title="Sound">
@@ -60,13 +60,13 @@
       <div class="sheet hidden" id="summary">
         <div class="sheet-body">
           <h3>The garden rests</h3>
-          <div class="gardens" id="sum-gardens"></div>
-          <div class="big" id="sum-pollen">0</div>
-          <div class="caps">pollen</div>
+          <div class="headline" id="sum-gardens"></div>
+          <div class="lantern-glyphs" id="sum-lanterns"></div>
+          <div class="star-groups" id="sum-stars"></div>
           <div class="best" id="sum-best"></div>
           <div class="stats">
+            <div><b class="pollen-stat" id="sum-pollen">0</b><span class="caps">pollen</span></div>
             <div><b id="sum-longest">0</b><span class="caps">longest chain</span></div>
-            <div><b id="sum-blooms">0</b><span class="caps">flowers bloomed</span></div>
           </div>
           <button id="btn-again" class="pill">Plant a new garden</button>
           <button id="btn-replay" class="link" style="margin-top: 10px">Replay this garden</button>

@@ -9,7 +9,7 @@ interface Fly {
   y: number;
   phase: number;
   speed: number;
-  pull: { x: number; y: number; until: number } | null;
+  pull: { x: number; y: number; until: number; k: number } | null;
 }
 
 interface Star {
@@ -60,6 +60,9 @@ export class Scene {
   /** Gathering point for fireflies when the garden rests (screen coords), or null. */
   gather: { x: number; y: number; r: number } | null = null;
   fireflyBoost = 1;
+  /** Garden-lit sky lift: the night factor drops by `amount` in `up` ms, then eases back over `down` ms. */
+  private lift: { amount: number; up: number; down: number; t: number } | null = null;
+  private liftNow = 0;
 
   constructor() {
     this.horizonGlow.anchor.set(0.5);
@@ -191,8 +194,35 @@ export class Scene {
         if (pulled >= tuning.scene.fireflyPullMax) continue;
         pulled++;
       }
-      f.pull = { x, y, until: this.t + tuning.scene.fireflyAttractMs / 1000 };
+      f.pull = { x, y, until: this.t + tuning.scene.fireflyAttractMs / 1000, k: 0.5 };
     }
+  }
+
+  /**
+   * Garden lit: the nearest `fireflyPullMax` fireflies drift to the lanterns (screen coords), closing
+   * most of the way before they let go.
+   */
+  gatherTo(points: readonly { x: number; y: number }[]): void {
+    if (points.length === 0) return;
+    const nearest = (f: Fly) => points.reduce((best, p) => (Math.hypot(f.s.x - p.x, f.s.y - p.y) < Math.hypot(f.s.x - best.x, f.s.y - best.y) ? p : best), points[0]);
+    const dist = (f: Fly) => {
+      const p = nearest(f);
+      return Math.hypot(f.s.x - p.x, f.s.y - p.y);
+    };
+    for (const f of [...this.flies].sort((a, b) => dist(a) - dist(b)).slice(0, tuning.scene.fireflyPullMax)) {
+      const p = nearest(f);
+      f.pull = { x: p.x, y: p.y, until: this.t + tuning.scene.fireflyAttractMs / 1000, k: 0.85 };
+    }
+  }
+
+  /** Lift the sky by `amount` of the night factor in `upMs`, easing back over `downMs` (a backdrop move, not a light). */
+  skyLift(amount: number, upMs: number, downMs: number): void {
+    this.lift = { amount, up: upMs, down: downMs, t: 0 };
+  }
+
+  clearLift(): void {
+    this.lift = null;
+    this.liftNow = 0;
   }
 
   /**
@@ -218,7 +248,17 @@ export class Scene {
       const e = this.nightT < 0.5 ? 2 * this.nightT * this.nightT : 1 - (-2 * this.nightT + 2) ** 2 / 2;
       this.night = this.nightFrom + (this.nightTarget - this.nightFrom) * e;
     }
-    const n = Math.max(0, Math.min(1, this.night));
+    if (this.lift) {
+      const l = this.lift;
+      l.t += dtMs;
+      const e = (u: number) => u * u * (3 - 2 * u);
+      this.liftNow = l.amount * (l.t < l.up ? e(l.t / Math.max(1, l.up)) : 1 - e(Math.min(1, (l.t - l.up) / Math.max(1, l.down))));
+      if (l.t >= l.up + l.down) {
+        this.lift = null;
+        this.liftNow = 0;
+      }
+    }
+    const n = Math.max(0, Math.min(1, this.night - this.liftNow));
     const deep = Math.max(0, this.night - 1) / 0.15;
     this.skyNight.alpha = n;
     this.groundNight.alpha = n;
@@ -257,7 +297,7 @@ export class Scene {
       }
       if (f.pull && this.t < f.pull.until) {
         const left = (f.pull.until - this.t) / (tuning.scene.fireflyAttractMs / 1000);
-        const w = Math.sin(Math.PI * (1 - left)) * 0.5;
+        const w = Math.sin(Math.PI * (1 - left)) * f.pull.k;
         x += (f.pull.x - x) * w;
         y += (f.pull.y - y) * w;
       } else f.pull = null;

@@ -203,9 +203,12 @@ export class BudView extends Container {
       shapePetal(l, s * f.leafLen, s * f.leafLen * 0.43, s * 0.04, Math.PI / 2 + (i === 0 ? -1 : 1) * 0.95);
       l.tint = ready ? palette.leafReady : palette.leaf;
     });
-    this.core.width = this.core.height = s * (seed ? 0.22 : 0.34);
-    this.core.tint = seed ? palette.seed : 0xffffff;
-    this.core.alpha = seed ? 0.7 : 1;
+    // Fullness reads by size and value, not a new hue: radius from tuning, tint seed grey -> the texture's own cream.
+    const full = n / MAX_PETALS;
+    const radii = f.coreRadius;
+    this.core.width = this.core.height = s * 2 * radii[Math.min(n, radii.length - 1)];
+    this.core.tint = lerpColor(palette.seed, 0xffffff, full);
+    this.core.alpha = 0.7 + 0.3 * full;
     this.shadow.width = s * 1.1 * (seed ? 0.6 : 1);
     this.shadow.height = s * 0.5 * (seed ? 0.6 : 1);
     this.shadow.position.set(0, s * 0.18);
