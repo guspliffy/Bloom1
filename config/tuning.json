@@ -132,6 +132,16 @@
     "maxPips": 14,
     "scoreHintChain": 5
   },
+  "leaderboard": {
+    "topRows": 50,
+    "feedRows": 100,
+    "guestRunsKept": 20,
+    "offerAfterEvenings": 2,
+    "fetchTimeoutMs": 4000,
+    "nameMin": 3,
+    "nameMax": 16,
+    "passwordMin": 6
+  },
   "audio": {
     "masterVolume": 0.55,
     "rootMidi": 60,

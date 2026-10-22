@@ -1,7 +1,7 @@
 # Bloom: game design
 
 ## §0 Pitch and stack
-A dusk garden of flower buds. Feed one a drop of water; when it fills it bursts open and feeds its neighbors, and a well-placed drop can bloom half the garden, each flower playing the next note of a melody. A static web app for phone and desktop; a **comparison prototype** against Still Water: core loop plus feel; no menus, progression, accounts or leaderboards.
+A dusk garden of flower buds. Feed one a drop of water; when it fills it bursts open and feeds its neighbors, and a well-placed drop can bloom half the garden, each flower playing the next note of a melody. A static web app for phone and desktop; a **comparison prototype** against Still Water: core loop plus feel; no menus or progression. A name and a board of gardeners are the one social thing (§8).
 
 ## §1 Pillars
 1. **Plan, then watch.** The pleasure is seeing a chain lined up, spending one drop, and watching your plan run on its own.
@@ -119,7 +119,35 @@ Open → title moment → tutorial (first visit only) → run → the garden res
 
 **Tutorial presentation.** Coach line in a pill above the bed (Layout): Nunito 600 17 px, ink, rgba(12,10,28,.55), 40 px tall, fading in 200 ms; four 10 px seed dots above it, a passed lesson's dot blooming into a 5-petal pollen glyph over 300 ms. Hint ring: additive ring 1.7s, 2 px, #ffe9c4, breathing alpha 0.4–0.9 at 1 Hz, plus a drop glyph bobbing 0.7s above the bud; in lesson 2 it also pulses the ready bud's chevrons. Lesson 4 shows its lantern post as a run does; lesson gardens use the same scene and bed at their own size.
 
-## §8 Backlog
+## §8 Leaderboard and accounts
+Fair async competition framed as other gardeners' evenings, never a race. Numbers in `tuning.leaderboard`. Backend as decided: our own small Node server on the owner's VPS (`server/`), one `runs` row per finished run (name, mode, seed, gardens lit, stars, pollen, longest chain, taps, date, tap log), name + password accounts; the server replays each tap log and shows only runs that check out. Fully playable offline and as a guest; nothing here blocks a tap.
+
+**Ranking.** Gardens lit, then stars, then pollen, then the earlier date (first there sits higher). One rule for every board.
+
+**Boards.** One sheet, "Gardeners", with a segmented control under the title (small caps, 32 px tall, selected segment ink on rgba(255,255,255,.08), others inkDim):
+- **Gardeners**: one row per player, their best endless evening, `topRows` (50) rows.
+- **Evenings**: every finished evening, newest first, `feedRows` (100) rows, no rank column: the garden's life, not a ladder. Tapping a row plants that evening's seed as a new garden; the sheet closes, toast "Nira's garden".
+- **Today** (once the daily exists): one row per player, their **first** finished daily evening; the day turns at 00:00 UTC, past days are not browsable, no streaks or missed-day marks. Daily replays are for yourself and are not submitted.
+Rows 44 px, Nunito 600 17 px ink, 1 px rgba(255,255,255,.06) separator: rank (Fraunces 500 inkDim, tabular, 32 px; Evenings shows the date in small caps instead, "Tue" or "12 Oct" past a week), name (flex, ellipsis), then right-aligned gardens lit (22 px lantern glyph + number), stars (18 px star + number), pollen (Fraunces 500 pollen colour, 64 px). Own row: cream text, 2 px cream bar at the left; on open the list scrolls to it and it pulses once (alpha 0.6 → 1, 600 ms). Outside the top it is pinned under the list with its true rank and the small caps line "Among 312 gardeners"; nothing says how far below. A guest's best evening is the same pinned row named "You", no rank: the player sees their place before they have a name.
+
+**Reaching it.** Settings gains two rows: "Gardeners" (above "Full screen") and, last, "Add your name" for guests or the member's name (opens the sign-out sheet). The end sheet gets a second link beside "Replay this garden" (24 px gap): "Gardeners". After a new best, opening the board lands on the pulsing own row; that is the whole celebration.
+
+**Board sheet layout.** A `.sheet.menu` with a taller body: title "Gardeners" (Fraunces 500 22 px), segments, scrolling list, pill "Back to the garden". Phone 390×844: body 342 px wide, list min(56vh, 520px) tall so the bed's top stays visible. Desktop 1280×800: the 440 px column, list 460 px. The list scrolls inside the sheet (`overscroll-behavior: contain`) with 24 px edge fades; the board behind scales to 0.94 and dims as for settings.
+
+**Account flow.** Never a modal, never a prompt on open. After a guest's `offerAfterEvenings` (2nd) finished evening, the end sheet adds one inkDim link under the stats, "Add your name to the board", in the same quiet place on every later end sheet, never animated. The "You" row carries the same link. It opens the **name sheet**: title "Your name"; two fields (48 px, rgba(255,255,255,.06) fill, 1 px rgba(255,255,255,.12) rim, cream on focus, Nunito 17 px; placeholders "Name", "Password"); hint, inkDim 13 px: "3 to 16 letters. No email, just a name to keep."; pill "Keep my name"; link "I already have a name" switches to title "Welcome back", pill "Sign in", hint "Same name and password as your other device." Enter submits. One message line under the fields (Nunito 600 15 px ink), replacing any earlier one:
+- "Three to sixteen characters." · "Letters, numbers and spaces only." · "That name is taken." · "Choose a kinder name." · "Password: six characters or more." · "Name or password is wrong." · "You're offline. The garden still grows; try again later." · "The board is out of reach right now."
+Success: the sheet closes into the board on the own row, toast "Welcome, Nira." The device's guest evenings (newest `guestRunsKept` = 20, with tap logs) are submitted first, so the row is already there. Every later evening is queued on device, sent when the end sheet opens, retried on launch and on `online`; the sheet never waits.
+**Sign-out sheet:** "Nira" Fraunces 500 22 px; inkDim "Your evenings stay on the board."; pill "Back to the garden"; link "Sign out" (clears the session and queued guest runs; the settings row returns to "Add your name").
+
+**Staying calm.** Words: gardeners, evenings, name; never leaderboard, rank up, beat, lose. Not shown: rank changes, arrows, percentiles, places behind, streaks, medals, podium colours, profiles, notifications, timers. Row 1 looks like row 50. A low rank is a row like any other, "Among n gardeners" its only context. Fairness: one ranking rule; the daily has one seed and adaptation off; tap logs allow replay verification, and a run that fails it is removed silently. Guest rows never reach the server.
+
+**Names.** `nameMin`–`nameMax` characters of Unicode letters, digits and single inner spaces; trimmed; unique after lowercasing and collapsing spaces. Reserved: you, guest, bloom, admin. Blocklist: about 60 words in `config/names-blocklist.json`, matched as a substring after lowercasing, removing spaces and mapping 0→o 1→i 3→e 4→a 5→s $→s; rejected with "Choose a kinder name." Checked on the client and again in a Postgres constraint. Guests are "You" on their own device and appear nowhere else.
+
+**Offline, loading, empty.** The last fetched board is cached per segment (`bloom.board.<segment>`) with its time. Offline: the cache under the small caps line "As of Tuesday", or with nothing cached the centred inkDim line "The board needs a connection." Loading: three coach seed dots breathe for up to `fetchTimeoutMs`, then "The board is out of reach right now." over the cache if any. Empty: "No evenings yet. Yours could be the first." The pinned own row and the account links work in every state.
+
+**Owner questions** (defaults in use): the daily counts the first finished evening, not the best (fair, no grinding); Evenings is newest-first, not best-first (a feed, not a second ladder); the row and sheet say "Gardeners", not "Leaderboard".
+
+## §9 Backlog
 - Aim the drop: hold a ready bud, slide toward a neighbour to send a fourth petal that way (strongest identity idea; next experiment after lanterns).
 - Lantern-garden wave 2: light bleeding into the soil, tiers at 4/8/12 with a moth, wind. Midnight blooms: pollen × (1 + night).
 - Share the lit garden as an image from the end sheet; slow-motion replay of the best chain.

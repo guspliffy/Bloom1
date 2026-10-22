@@ -8,6 +8,7 @@ import { chainStop } from './core/stop';
 import { tutorialLessons, type Lesson } from './core/tutorial';
 import { lerpColor, palette } from './view/palette';
 import { previewHint, type Hud } from './hud';
+import { isCleanRun } from './net/clean';
 import { tuning } from './tuning';
 import { hudMoteCount, REDUCED_MOTION, type GardenView, type PlayHooks } from './view/garden';
 import type { Scene } from './view/scene';
@@ -43,6 +44,10 @@ export class Game {
   private fixedSeed: number | null;
   /** Key of the garden left on the board when the evening ended; the summary's replay link starts it. */
   private restKey: GardenKey | null = null;
+  /** The evening on the board began at a replay key, not at garden 0: it never reaches the boards. */
+  private fromKey = false;
+  /** Set by main: an evening ended (clean = eligible for the boards). Never awaited. */
+  onEvening: ((run: Run, clean: boolean) => void) | null = null;
   private idleTimer = 0;
   /** The first gesture's unlock; the session's first chain waits for it (at most 200 ms). */
   private unlocking: Promise<void> = Promise.resolve();
@@ -110,6 +115,20 @@ export class Game {
     this.scene.setNight(0);
   }
 
+  /** Tapping an Evenings row: that gardener's evening, planted fresh. */
+  plantSeed(seed: number, gardener: string): void {
+    this.newRun(undefined, seed >>> 0);
+    this.hud.toast(`${gardener}'s garden`);
+  }
+
+  /** Debug hook: end the evening now without sending it anywhere. */
+  debugEnd(): void {
+    const run = this.run;
+    if (!run) return;
+    run.ended = true;
+    void this.finish(run, this.epoch, false);
+  }
+
   startTutorial(): void {
     this.resetScene();
     this.lessons = tutorialLessons(matchMedia('(pointer: fine)').matches);
@@ -135,11 +154,15 @@ export class Game {
     this.garden.sproutIn();
   }
 
-  /** A fresh evening; with `from`, one that starts at exactly that garden (same buds and lanterns, full drops). */
-  newRun(from?: GardenKey): void {
+  /**
+   * A fresh evening; with `from`, one that starts at exactly that garden (same buds and lanterns, full
+   * drops); with `plant`, a fresh evening of that seed (an Evenings row), which still starts at garden 0.
+   */
+  newRun(from?: GardenKey, plant?: number): void {
     if (this.inTutorial) store(TUTORIAL_KEY, '1');
     this.resetScene();
-    const seed = this.fixedSeed ?? (Math.random() * 2 ** 32) >>> 0;
+    const seed = plant ?? this.fixedSeed ?? (Math.random() * 2 ** 32) >>> 0;
+    this.fromKey = !!from;
     this.run = new Run(tuning, seed, from);
     this.lessons = [];
     this.hud.hideCoach();
@@ -401,7 +424,7 @@ export class Game {
   }
 
   /** The garden rests: stillness, the sky past night, fireflies gather, the chord, then the tally. */
-  private async finish(run: Run, epoch: number): Promise<void> {
+  private async finish(run: Run, epoch: number, report = true): Promise<void> {
     await this.tw.wait(600);
     if (epoch !== this.epoch) return;
     const f = tuning.feel;
@@ -415,6 +438,8 @@ export class Game {
     const total = run.stars.reduce((a, b) => a + b, 0);
     if (total > prev) store(BEST_STARS_KEY, String(total));
     this.restKey = { ...run.key };
+    // Queued and sent while the sheet rises; the sheet never waits for the network.
+    if (report) this.onEvening?.(run, isCleanRun({ fromKey: this.fromKey, fixedSeed: this.fixedSeed !== null }));
     this.hud.showSummary(
       { stars: [...run.stars], lanternsLit: [...run.lit], pollen: run.pollen, longest: run.longest, prevBestStars: prev },
       (i) => this.synth.tick(i),

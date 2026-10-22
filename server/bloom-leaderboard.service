@@ -1,0 +1,27 @@
+# Manual install: copy to /etc/systemd/system/bloom-leaderboard.service, adjust the paths and origins,
+# then: sudo systemctl daemon-reload && sudo systemctl enable --now bloom-leaderboard
+# (server/install.sh writes an equivalent unit for you.)
+[Unit]
+Description=Bloom leaderboard
+After=network.target
+
+[Service]
+User=bloom
+Group=bloom
+WorkingDirectory=/opt/bloom/data
+ExecStart=/usr/bin/node /opt/bloom/server/server.mjs
+Environment=PORT=8787
+Environment=HOST=127.0.0.1
+Environment=DB_PATH=/opt/bloom/data/bloom.sqlite
+Environment=ALLOWED_ORIGINS=https://guspliffy.github.io
+Environment=TRUST_PROXY=1
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/bloom/data
+
+[Install]
+WantedBy=multi-user.target

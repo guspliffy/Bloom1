@@ -46,6 +46,8 @@ export class Run {
   longest = 0;
   totalBlooms = 0;
   taps = 0;
+  /** Board cell of every tap, in order: with the seed (and the key it started from) it replays the evening. */
+  readonly tapLog: number[] = [];
   ended = false;
   lanterns: number[] = [];
   lit: boolean[] = [];
@@ -89,6 +91,7 @@ export class Run {
 
   tap(cell: number): TapOutcome {
     if (this.ended || this.drops <= 0) throw new Error('run is over');
+    this.tapLog.push(cell);
     const best = bestSingleTap(this.board, this.buds).blooms;
     this.drops--;
     this.taps++;

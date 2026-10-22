@@ -40,7 +40,9 @@
             <button id="btn-help" class="row">How to play</button>
             <button id="btn-tutorial" class="row">Replay the tutorial</button>
             <button id="btn-new" class="row">New garden</button>
+            <button id="btn-board" class="row">Gardeners</button>
             <button id="btn-full" class="row">Full screen</button>
+            <button id="btn-account" class="row">Add your name</button>
           </div>
           <button id="btn-back" class="pill">Back to the garden</button>
         </div>
@@ -58,6 +60,39 @@
           <button id="btn-howto-back" class="pill">Back to the garden</button>
         </div>
       </div>
+      <div class="sheet menu board hidden" id="board">
+        <div class="sheet-body">
+          <h2>Gardeners</h2>
+          <div class="segs" id="segs" role="tablist">
+            <button class="seg on" data-seg="gardeners" role="tab" aria-selected="true">Gardeners</button>
+            <button class="seg" data-seg="evenings" role="tab" aria-selected="false">Evenings</button>
+            <button class="seg" data-seg="today" role="tab" aria-selected="false" hidden>Today</button>
+          </div>
+          <div class="lb-note" id="lb-note"></div>
+          <div class="lb-list" id="lb-list"></div>
+          <div class="lb-pin" id="lb-pin"></div>
+          <button id="btn-board-back" class="pill">Back to the garden</button>
+        </div>
+      </div>
+      <div class="sheet menu hidden" id="namesheet">
+        <form class="sheet-body" id="name-form" novalidate>
+          <h2 id="name-title">Your name</h2>
+          <input id="name-input" name="username" type="text" placeholder="Name" aria-label="Name" autocomplete="username" autocapitalize="words" autocorrect="off" spellcheck="false" maxlength="40" enterkeyhint="next" />
+          <input id="pass-input" name="password" type="password" placeholder="Password" aria-label="Password" autocomplete="new-password" maxlength="72" enterkeyhint="go" />
+          <p class="msg" id="name-msg" role="status"></p>
+          <p class="hint" id="name-hint">3 to 16 letters. No email, just a name to keep.</p>
+          <button type="submit" id="btn-name-go" class="pill">Keep my name</button>
+          <button type="button" id="btn-name-mode" class="link">I already have a name</button>
+        </form>
+      </div>
+      <div class="sheet menu hidden" id="signout">
+        <div class="sheet-body">
+          <h2 id="who"></h2>
+          <p class="note">Your evenings stay on the board.</p>
+          <button id="btn-signout-back" class="pill">Back to the garden</button>
+          <button id="btn-signout" class="link">Sign out</button>
+        </div>
+      </div>
       <div class="sheet hidden" id="summary">
         <div class="sheet-body">
           <h3>The garden rests</h3>
@@ -69,8 +104,12 @@
             <div><b class="pollen-stat" id="sum-pollen">0</b><span class="caps">pollen</span></div>
             <div><b id="sum-longest">0</b><span class="caps">longest chain</span></div>
           </div>
+          <button id="btn-offer" class="link offer" hidden>Add your name to the board</button>
           <button id="btn-again" class="pill">Plant a new garden</button>
-          <button id="btn-replay" class="link" style="margin-top: 10px">Replay this garden</button>
+          <div class="links">
+            <button id="btn-replay" class="link">Replay this garden</button>
+            <button id="btn-gardeners" class="link">Gardeners</button>
+          </div>
         </div>
       </div>
     </div>

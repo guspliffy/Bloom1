@@ -3,12 +3,12 @@ import { tuning } from './tuning';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const DROP_SVG = '<svg viewBox="0 0 12 16" aria-hidden="true"><path d="M6 1C4.4 3.6 1.5 6.6 1.5 9.9a4.5 4.5 0 0 0 9 0C10.5 6.6 7.6 3.6 6 1Z"/></svg>';
-const LANTERN_SVG =
+export const LANTERN_SVG =
   '<svg viewBox="0 0 16 20" aria-hidden="true"><rect class="cap" x="5.5" y="1" width="5" height="2" rx="0.6"/>' +
   '<path class="glass" d="M8 4.2 13 7v6.2L8 16l-5-2.8V7Z"/></svg>';
 /** The four-point pollen star, as the counter draws it. */
 const STAR_PATH = 'M12 1.5c.7 5.6 4.9 9.8 10.5 10.5-5.6.7-9.8 4.9-10.5 10.5-.7-5.6-4.9-9.8-10.5-10.5C7.1 11.3 11.3 7.1 12 1.5Z';
-const STAR_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${STAR_PATH}"/></svg>`;
+export const STAR_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${STAR_PATH}"/></svg>`;
 const BLOOM_SVG =
   '<svg viewBox="0 0 16 16" aria-hidden="true">' +
   [0, 72, 144, 216, 288].map((a) => `<ellipse cx="8" cy="4.2" rx="2.4" ry="3.6" transform="rotate(${a} 8 8)"/>`).join('') +
@@ -116,6 +116,10 @@ export interface BedFrame {
   gear: { x: number; y: number } | null;
 }
 
+/** Every bottom sheet that dims the board and pauses taps; one is open at a time. */
+export const SHEET_IDS = ['settings', 'howto', 'board', 'namesheet', 'signout'] as const;
+export type SheetId = (typeof SHEET_IDS)[number];
+
 /** DOM overlay: drop pips, pollen counter, chain count, title, coach, toasts, the settings button and its sheets. */
 export class Hud {
   private hud = $('hud');
@@ -129,8 +133,7 @@ export class Hud {
   private title = $('title');
   private toastEl = $('toast');
   private summary = $('summary');
-  private howto = $('howto');
-  private settings = $('settings');
+  private sheets = SHEET_IDS.map((id) => $(id));
   private chainNum = $('chain-num');
   private coachEl = $('coach');
   private coachText = $('coach-text');
@@ -146,7 +149,8 @@ export class Hud {
   private coachTimer = 0;
   private bed: BedFrame = { x: 0, top: 0, bottom: 0, s: 40, gear: null };
   private sheetWasOpen = false;
-  /** Called when the settings or How to play sheet opens or closes (the board dims and scales). */
+  private pendingToast: { text: string; ms: number } | null = null;
+  /** Called when a sheet opens or the last one closes (the board dims and scales). */
   onSheet: ((open: boolean) => void) | null = null;
 
   setStatsVisible(v: boolean): void {
@@ -325,7 +329,12 @@ export class Hud {
     if (this.pendingCoach) this.coachTimer = window.setTimeout(() => this.flushCoach(), 450);
   }
 
+  /** A toast waits for the sheets to close: it sits under the bed, where a sheet would cover it. */
   toast(text: string, ms = tuning.feel.toastMs): void {
+    if (this.sheetOpen) {
+      this.pendingToast = { text, ms };
+      return;
+    }
     clearTimeout(this.toastHide);
     this.toastEl.textContent = text;
     this.toastEl.classList.add('show');
@@ -419,25 +428,36 @@ export class Hud {
   }
 
   showSettings(): void {
-    this.howto.classList.add('hidden');
-    this.settings.classList.remove('hidden');
-    this.sheetChanged();
+    this.showSheet('settings');
   }
 
   showHowto(): void {
-    this.settings.classList.add('hidden');
-    this.howto.classList.remove('hidden');
+    this.showSheet('howto');
+  }
+
+  /** Open one sheet, closing any other. */
+  showSheet(id: SheetId): void {
+    this.sheets.forEach((el) => el.classList.toggle('hidden', el.id !== id));
     this.sheetChanged();
   }
 
   closeSheets(): void {
-    this.settings.classList.add('hidden');
-    this.howto.classList.add('hidden');
+    this.sheets.forEach((el) => el.classList.add('hidden'));
     this.sheetChanged();
   }
 
   get sheetOpen(): boolean {
-    return !this.settings.classList.contains('hidden') || !this.howto.classList.contains('hidden');
+    return this.sheets.some((el) => !el.classList.contains('hidden'));
+  }
+
+  /** The last row of the settings sheet: "Add your name" for a guest, the member's name otherwise. */
+  setAccountRow(name: string | null): void {
+    $('btn-account').textContent = name ?? 'Add your name';
+  }
+
+  /** End sheet: the quiet "Add your name to the board" link, shown to guests from their second evening. */
+  setOffer(show: boolean): void {
+    $('btn-offer').hidden = !show;
   }
 
   /** The Sound switch in the settings sheet. */
@@ -452,5 +472,10 @@ export class Hud {
     if (open === this.sheetWasOpen) return;
     this.sheetWasOpen = open;
     this.onSheet?.(open);
+    if (!open && this.pendingToast) {
+      const t = this.pendingToast;
+      this.pendingToast = null;
+      this.toast(t.text, t.ms);
+    }
   }
 }

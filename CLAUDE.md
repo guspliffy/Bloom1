@@ -11,6 +11,9 @@ TypeScript, Vite, PixiJS 8 (WebGL), Vitest, Web Audio (synthesized, no sound fil
 - `npm run typecheck`: `tsc --noEmit`
 - `npm run build`: typecheck plus production build into `dist/`
 - `npm run sim -- 300`: bot balance simulation (run length, chain sizes) after tuning changes
+- `npm run server:build` / `npm run server:dev`: bundle or run the leaderboard server locally
+
+The server only accepts runs whose game version (package version + hash of `config/tuning.json`) matches its own, so redeploy the server (rerun install.sh) whenever tuning or rules change.
 
 ## Folder map
 - `config/tuning.json`: every gameplay number. Code reads it through `src/tuning.ts`; never hardcode one.
@@ -21,6 +24,9 @@ TypeScript, Vite, PixiJS 8 (WebGL), Vitest, Web Audio (synthesized, no sound fil
 - `src/hud.ts`: DOM overlay (counters, chain banner, floating numbers, summary card).
 - `src/game.ts`: flow (tutorial, run, summary) wiring logic, view, audio and HUD.
 - `src/dev/panel.ts`: Tweakpane tuning panel, lazy-loaded.
+- `src/net/`: online layer. `online` (HTTP client, session, run queues), `names` (name rules, shared with the server), `guestRuns`, `clean` (which runs may be submitted, game version), `board` (board helpers), `fake` (in-memory server for `__bloom.fakeOnline()`). `src/boardView.ts`, `src/accountSheets.ts`, `src/social.ts`: Gardeners board, name and sign-out sheets, run submission.
+- `server/`: self-hosted leaderboard (Node 22, `node:sqlite`, no dependencies). Replays each submitted tap log with `src/core` and shows only runs that verify. `server/install.sh` is the one-command VPS install and update; see `server/README.md`.
+- `config/online.json`: API address for the GitHub Pages build (empty = offline). `VITE_BLOOM_API` overrides it at build time. `config/names-blocklist.json`: name blocklist used by client and server.
 - `tests/`: Vitest specs. `scripts/sim.ts`: balance bots.
 
 ## Architecture rules

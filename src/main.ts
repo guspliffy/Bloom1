@@ -2,8 +2,13 @@ import { resolveTap } from './core/rules';
 import { Application, Container } from 'pixi.js';
 import { Synth } from './audio/synth';
 import { bestSingleTap } from './core/solver';
+import { NameSheet, SignOutSheet } from './accountSheets';
+import { BoardView } from './boardView';
 import { Game } from './game';
-import { gearSpot, Hud } from './hud';
+import { gearSpot, Hud, SHEET_IDS } from './hud';
+import { addGuestRun } from './net/guestRuns';
+import { Online, online } from './net/online';
+import { Social } from './social';
 import './style.css';
 import { tuning } from './tuning';
 import { GardenView, REDUCED_MOTION } from './view/garden';
@@ -126,8 +131,25 @@ async function boot(): Promise<void> {
   button('btn-tutorial', () => game.startTutorial());
   button('btn-new', () => game.newRun());
   button('btn-again', () => game.newRun());
+
+  // Gardeners and accounts: the UI talks only to the online layer, through Social.
+  const social = new Social(online, hud);
+  const board = new BoardView(hud, social, {
+    plant: (seed, name) => game.plantSeed(seed, name),
+    addName: () => names.open('create'),
+  });
+  const names = new NameSheet(hud, social, () => board.open('gardeners'));
+  const signOut = new SignOutSheet(hud, social);
+  game.onEvening = (run, clean) => social.evening(run, clean);
+  button('btn-board', () => board.open());
+  button('btn-gardeners', () => board.open());
+  button('btn-board-back', () => hud.closeSheets());
+  button('btn-offer', () => names.open('create'));
+  button('btn-account', () => (social.player ? signOut.open() : names.open('create')));
+  void social.init();
+
   // A tap on the dimmed board above a sheet, or Escape, goes back to the garden.
-  for (const id of ['settings', 'howto']) {
+  for (const id of SHEET_IDS) {
     document.getElementById(id)!.addEventListener('click', (e) => {
       if (e.target === e.currentTarget) hud.closeSheets();
     });
@@ -163,7 +185,7 @@ async function boot(): Promise<void> {
   };
   if (new URLSearchParams(location.search).has('dev')) void togglePanel();
   window.addEventListener('keydown', (e) => {
-    if (e.key === '`') void togglePanel();
+    if (e.key === '`' && !(e.target instanceof HTMLInputElement)) void togglePanel();
   });
 
   // Read-only hook for automated play-throughs (Playwright smoke test).
@@ -175,6 +197,37 @@ async function boot(): Promise<void> {
     },
     state: () => ({ gardensLit: game.run?.gardensLit, lit: game.run?.litCount, lesson: (game as unknown as { lessonIdx: number }).lessonIdx, busy: game.busy, ended: game.run?.ended ?? false, drops: game.run?.drops, pollen: game.run?.pollen, longest: game.run?.longest }),
     /** Like the sim's lantern bot: the tap that lights or feeds the most unlit lanterns. */
+    /** Open a sheet: 'board', 'evenings', 'name', 'signin', 'signout', 'settings'. */
+    open: (sheet: string) => {
+      if (sheet === 'board' || sheet === 'evenings') board.open(sheet === 'board' ? 'gardeners' : 'evenings');
+      else if (sheet === 'name' || sheet === 'signin') names.open(sheet === 'name' ? 'create' : 'signin');
+      else if (sheet === 'signout') signOut.open();
+      else if (sheet === 'settings') hud.showSettings();
+      else hud.closeSheets();
+    },
+    /** End the evening now (nothing is sent) to see the end sheet. */
+    endRun: () => game.debugEnd(),
+    /** A finished guest evening on this device, as if it had been played. */
+    addGuestRun: (r: { gardensLit: number; stars: number; pollen: number }) => {
+      addGuestRun({ mode: 'endless', seed: 7, longest: 5, taps: 20, tapLog: [], gameVersion: 'debug', playedAt: new Date().toISOString(), ...r });
+    },
+    /**
+     * Swap in an in-memory server. `me` signs in as that sample gardener ('Nira' sits in the top 50, 'Wren'
+     * below it); `offline` leaves apiUrl empty; `down` (no connection), `broken` (500s), `latencyMs`, `empty` shape the server. The server is
+     * left on `window.__bloomServer` so a script can break it later.
+     */
+    fakeOnline: async (opts: { me?: string; offline?: boolean; down?: boolean; broken?: boolean; latencyMs?: number; empty?: boolean } = {}) => {
+      const { FakeServer, sampleServer } = await import('./net/fake');
+      const server = opts.empty ? new FakeServer() : sampleServer();
+      (window as unknown as Record<string, unknown>).__bloomServer = server;
+      const o = opts.offline ? new Online({ config: { apiUrl: '' } }) : server.online();
+      localStorage.removeItem('bloom.auth'); // a session from another server means nothing to this one
+      if (opts.me && !opts.offline) await o.signIn(opts.me, 'secret1');
+      server.down = !!opts.down;
+      server.broken = !!opts.broken;
+      server.latencyMs = opts.latencyMs ?? 0;
+      await social.setOnline(o);
+    },
     pickLantern: () => {
       const run = game.run!;
       const unlit = run.lanterns.filter((_, k) => !run.lit[k]);

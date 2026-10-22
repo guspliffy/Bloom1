@@ -9,7 +9,9 @@
     "preview": "vite preview --host",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "sim": "tsx scripts/sim.ts"
+    "sim": "tsx scripts/sim.ts",
+    "server:build": "node server/build.mjs",
+    "server:dev": "node server/build.mjs && DB_PATH=./data/dev.sqlite ALLOWED_ORIGINS=* node server/dist/server.mjs"
   },
   "dependencies": {
     "pixi.js": "^8.22.0",
