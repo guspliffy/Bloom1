@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import defaults from '../config/tuning.json';
 import { Adapter } from '../src/core/adapt';
 import { generateGarden } from '../src/core/generator';
+import { previewTap } from '../src/core/preview';
 import { cellIndex, makeBoard } from '../src/core/hex';
 import { tutorialLessons } from '../src/core/tutorial';
 import { Rng } from '../src/core/rng';
@@ -181,5 +182,34 @@ describe('run', () => {
       return { log, pollen: run.pollen };
     };
     expect(play()).toEqual(play());
+  });
+});
+
+describe('preview', () => {
+  const board = makeBoard(3);
+  const rng = new Rng(11);
+  const buds = generateGarden(board, defaults.sprout, 0.5, rng);
+  it('matches the real cascade at full depth', () => {
+    for (let c = 0; c < board.size; c++) {
+      const r = resolveTap(board, buds, c);
+      const p = previewTap(board, buds, c, 99);
+      expect(p.blooms).toEqual(r.bloomed);
+      expect(p.next).toEqual([]);
+    }
+  });
+  it('shows only the first step and hints the next blooms at depth 1', () => {
+    for (let c = 0; c < board.size; c++) {
+      const r = resolveTap(board, buds, c);
+      const p = previewTap(board, buds, c, 1);
+      expect(p.blooms).toEqual(r.steps[0]?.blooms ?? []);
+      expect(p.transfers).toEqual(r.steps[0]?.transfers ?? []);
+      expect(p.next).toEqual(r.steps[1]?.blooms ?? []);
+      if (p.blooms.length === 0) expect(p.petalsAfter).toBe(buds[c].petals + 1);
+    }
+  });
+  it('does not change the garden', () => {
+    const before = JSON.stringify(buds);
+    previewTap(board, buds, 0, 99);
+    expect(JSON.stringify(buds)).toBe(before);
   });
 });

@@ -39,6 +39,8 @@ export class BudView extends Container {
   readonly arrowsG = new Graphics();
   readonly budC = new Container();
   private petalSprites: Sprite[] = [];
+  /** The petal a tap would add, shown faintly while this bud is previewed. */
+  readonly ghost = petalSprite();
   private core = new Sprite(coreTexture());
   readonly flower = new Container();
   readonly flowerPetals: Sprite[] = [];
@@ -90,7 +92,8 @@ export class BudView extends Container {
       this.petalSprites.push(p);
       this.budC.addChild(p);
     }
-    this.budC.addChild(this.core);
+    this.ghost.visible = false;
+    this.budC.addChild(this.ghost, this.core);
     for (let i = 0; i < 16; i++) {
       const p = petalSprite();
       this.flowerPetals.push(p);
@@ -176,6 +179,15 @@ export class BudView extends Container {
     this.shadow.height = s * 0.45 * (seed ? 0.5 : 1);
     this.shadow.position.set(0, s * 0.16);
     this.shadow.alpha = 0.3;
+  }
+
+  /** Show where a tap would add its petal (preview); false hides it. */
+  setGhost(show: boolean): void {
+    const n = this.petals;
+    this.ghost.visible = show && !this.isOpen && n < MAX_PETALS && n < this.arrows.length;
+    if (!this.ghost.visible) return;
+    shapePetal(this.ghost, this.s * 0.55, this.s * 0.21, this.s * 0.08, this.angleOf(this.arrows[n]));
+    this.ghost.tint = n + 1 >= MAX_PETALS ? palette.petalReady : palette.petalIdle;
   }
 
   /** Idle life, called every frame: petals lean on their own phase. */

@@ -2,6 +2,7 @@ import { scheduleChain, type ChainSchedule } from './audio/schedule';
 import { chainStep, type Synth } from './audio/synth';
 import { resolveTap, type Bud, type TapResult } from './core/rules';
 import { Run } from './core/run';
+import { previewTap } from './core/preview';
 import { bestSingleTap } from './core/solver';
 import { tutorialLessons, type Lesson } from './core/tutorial';
 import type { Hud } from './hud';
@@ -13,6 +14,7 @@ import type { Tweener } from './view/tween';
 const TUTORIAL_KEY = 'bloom.tutorialDone.v2';
 const BEST_KEY = 'bloom.best';
 const FIRST_RUN_KEY = 'bloom.firstRunDone';
+const PREVIEW_HINT_KEY = 'bloom.previewHintDone';
 
 function store(key: string, value?: string): string | null {
   try {
@@ -48,6 +50,13 @@ export class Game {
     const seed = params.get('seed');
     this.fixedSeed = seed !== null && seed !== '' ? Number(seed) >>> 0 : null;
     garden.onTap = (cell) => void this.tap(cell);
+    garden.onPreview = (cell) => {
+      if (this.busy || this.hud.howtoOpen) return null;
+      if (this.inTutorial) return previewTap(this.lessons[this.lessonIdx].board, this.lessonBuds, cell, tuning.preview.depth);
+      const run = this.run;
+      if (!run || run.ended) return null;
+      return previewTap(run.board, run.buds, cell, tuning.preview.depth);
+    };
     this.wantTutorial = params.has('tutorial') || params.has('intro') || store(TUTORIAL_KEY) !== '1';
   }
 
@@ -226,6 +235,10 @@ export class Game {
     this.hud.setDrops(run.drops);
     this.garden.sync(run.buds);
     this.busy = false;
+    if (!out.ended && store(PREVIEW_HINT_KEY) !== '1') {
+      store(PREVIEW_HINT_KEY, '1');
+      this.hud.toast(matchMedia('(pointer: fine)').matches ? 'Hover a bud to see where its petals go.' : 'Hold a bud to see where its petals go.', 4200);
+    }
     if (out.ended) {
       store(FIRST_RUN_KEY, '1');
       await this.finish(run, epoch);

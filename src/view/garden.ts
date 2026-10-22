@@ -1,6 +1,7 @@
-import { Container, Sprite } from 'pixi.js';
+import { Container, Graphics, Sprite, type FederatedPointerEvent } from 'pixi.js';
 import type { BloomCue, ChainSchedule } from '../audio/schedule';
 import { cellCenter, dirAngle, type Board } from '../core/hex';
+import type { PreviewPlan } from '../core/preview';
 import { MAX_PETALS, type Bud, type TapResult } from '../core/rules';
 import type { Sprout } from '../core/run';
 import { tuning } from '../tuning';
@@ -36,6 +37,8 @@ export class GardenView extends Container {
   s = 40;
   rot = 0;
   onTap: (cell: number) => void = () => {};
+  /** Asked for a preview of a tap on `cell`; null when no preview should show (a chain is playing). */
+  onPreview: (cell: number) => PreviewPlan | null = () => null;
   /** Buds circled by a breathing ring with a waiting drop (tutorial and first-run hint). */
   hintCells: number[] = [];
   /** Pulse the chevrons of the hinted buds (tutorial lesson on arrows). */
@@ -55,6 +58,11 @@ export class GardenView extends Container {
   private particles = 0;
   private baseX = 0;
   private baseY = 0;
+  private previewG = new Graphics();
+  private preview: PreviewPlan | null = null;
+  private previewSet = new Set<number>();
+  private press: { id: number; cell: number; touch: boolean; x: number; y: number; held: boolean; timer: number } | null = null;
+  private hoverTimer = 0;
 
   constructor(
     private tw: Tweener,
@@ -68,7 +76,124 @@ export class GardenView extends Container {
     this.chainLight.tint = palette.cascadeLight;
     this.chainLight.alpha = 0;
     this.light.addChild(this.chainLight);
-    this.addChild(this.bed, this.light, this.budLayer, this.fx);
+    this.addChild(this.bed, this.light, this.budLayer, this.previewG, this.fx);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pointermove', (e) => this.pointerMove(e));
+      window.addEventListener('pointerup', (e) => this.pointerUp(e, false));
+      window.addEventListener('pointercancel', (e) => this.pointerUp(e, true));
+    }
+  }
+
+  // Input: a quick press is a tap. On touch, holding (or sliding) previews the bud under the finger
+  // and letting go cancels; a mouse previews on hover and taps on click (GDD §7 preview).
+  private pointerDown(i: number, e: FederatedPointerEvent): void {
+    if (this.press) return;
+    const touch = e.pointerType !== 'mouse';
+    this.press = { id: e.pointerId, cell: i, touch, x: e.global.x, y: e.global.y, held: false, timer: 0 };
+    if (touch) {
+      this.press.timer = window.setTimeout(() => {
+        if (!this.press) return;
+        this.press.held = true;
+        this.showPreview(this.press.cell);
+      }, tuning.preview.holdMs);
+    }
+  }
+
+  private pointerMove(e: PointerEvent): void {
+    const p = this.press;
+    if (!p || p.id !== e.pointerId || !p.touch) return;
+    if (!p.held && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 12) {
+      clearTimeout(p.timer);
+      p.held = true;
+    }
+    if (p.held) {
+      const cell = this.cellAt(e.clientX, e.clientY);
+      if (cell !== this.preview?.cell) this.showPreview(cell);
+    }
+  }
+
+  private pointerUp(e: PointerEvent, cancel: boolean): void {
+    const p = this.press;
+    if (!p || p.id !== e.pointerId) return;
+    clearTimeout(p.timer);
+    this.press = null;
+    if (p.touch) this.showPreview(-1);
+    if (!cancel && !p.held) {
+      if (!p.touch) this.showPreview(-1);
+      this.onTap(p.cell);
+    }
+  }
+
+  private hover(i: number, on: boolean): void {
+    clearTimeout(this.hoverTimer);
+    if (!FINE_POINTER || this.press) return;
+    if (!on) {
+      if (this.preview?.cell === i) this.showPreview(-1);
+      return;
+    }
+    this.hoverTimer = window.setTimeout(() => this.showPreview(i), tuning.preview.hoverDelayMs);
+  }
+
+  /** Bud under a screen point, or -1. */
+  private cellAt(x: number, y: number): number {
+    const p = this.toLocal({ x, y });
+    let best = -1;
+    let bestD = this.s * 0.95;
+    this.buds.forEach((v, i) => {
+      const d = Math.hypot(v.x - p.x, v.y - p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    return best;
+  }
+
+  /** Show what a tap on `cell` would do; -1 clears. */
+  showPreview(cell: number): void {
+    const plan = cell >= 0 && !this.buds[cell]?.isOpen ? this.onPreview(cell) : null;
+    for (const v of this.buds) v.setGhost(false);
+    this.preview = plan;
+    this.previewSet.clear();
+    const g = this.previewG.clear();
+    if (!plan) return;
+    const v = this.buds[plan.cell];
+    this.previewSet.add(plan.cell);
+    if (plan.blooms.length === 0) {
+      v.setGhost(true);
+      return;
+    }
+    const s = this.s;
+    const ink = palette.hint;
+    for (const c of plan.blooms) {
+      this.previewSet.add(c);
+      const b = this.buds[c];
+      g.circle(b.x, b.y, s * 0.78).stroke({ width: 2, color: palette.petalReady, alpha: 0.85 });
+    }
+    for (const tr of plan.transfers) {
+      const path = this.flightPath(tr.from, tr.dir, tr.to);
+      const dots = 7;
+      for (let k = 1; k <= dots; k++) {
+        const q = path((k / (dots + 1)) * (tr.landed ? 0.82 : 1));
+        g.circle(q.x, q.y, Math.max(2, s * 0.06)).fill({ color: ink, alpha: tr.landed ? 0.75 : 0.35 });
+      }
+      if (tr.landed) {
+        this.previewSet.add(tr.to);
+        const t = this.buds[tr.to];
+        g.circle(t.x, t.y, s * 0.12).fill({ color: ink, alpha: 0.5 });
+      } else {
+        // A petal that would be lost: a short drop and a faint mark where it falls.
+        const end = path(1);
+        g.moveTo(end.x, end.y).lineTo(end.x, end.y + s * 0.3).stroke({ width: 1.5, color: ink, alpha: 0.3 });
+        g.circle(end.x, end.y + s * 0.34, s * 0.05).fill({ color: ink, alpha: 0.3 });
+      }
+    }
+    for (const c of plan.next) {
+      this.previewSet.add(c);
+      const b = this.buds[c];
+      g.circle(b.x, b.y, s * 0.78).stroke({ width: 2, color: palette.petalReady, alpha: 0.5 });
+      g.circle(b.x, b.y, s * 0.92).stroke({ width: 1, color: palette.petalReady, alpha: 0.3 });
+    }
   }
 
   setGarden(board: Board, buds: readonly Bud[]): void {
@@ -79,11 +204,16 @@ export class GardenView extends Container {
     }
     this.dimmed.clear();
     this.restDim = false;
+    this.preview = null;
+    this.previewSet.clear();
+    this.previewG.clear();
     this.buds = buds.map((bud, i) => {
       const v = new BudView(this.s, i);
       v.layout(this.s, this.rot);
       v.setBud(bud);
-      v.on('pointerdown', () => this.onTap(i));
+      v.on('pointerdown', (e) => this.pointerDown(i, e));
+      v.on('pointerover', (e) => e.pointerType === 'mouse' && this.hover(i, true));
+      v.on('pointerout', (e) => e.pointerType === 'mouse' && this.hover(i, false));
       this.budLayer.addChild(v);
       return v;
     });
@@ -160,7 +290,8 @@ export class GardenView extends Container {
         v.budC.rotation = v.jitterRot;
         v.lean(t);
       }
-      const dimTo = this.restDim ? 0.6 : this.dimmed.has(i) ? f.cascadeDimAlpha : 1;
+      const previewDim = this.preview && !this.previewSet.has(i);
+      const dimTo = this.restDim ? 0.6 : this.dimmed.has(i) ? f.cascadeDimAlpha : previewDim ? tuning.preview.dimAlpha : 1;
       v.alpha += (dimTo - v.alpha) * Math.min(1, dtMs / 250);
 
       const hinted = !v.isOpen && this.hintCells.includes(i);
@@ -174,9 +305,10 @@ export class GardenView extends Container {
       v.hintDrop.visible = v.hintDrop.alpha > 0.01;
       v.arrowsG.renderable = v.arrowsG.alpha > 0.01;
 
-      // Chevrons: warm on ready buds, faint on a hovered bud (desktop only), otherwise hidden.
-      const hover = !ready && !v.isOpen && v.hovered && FINE_POINTER;
-      const target = ready ? 0.9 : hover ? 0.4 : 0;
+      if (v.ghost.visible) v.ghost.alpha = 0.3 + 0.25 * pulse;
+      // Chevrons: warm on ready buds and on the previewed bud, otherwise hidden.
+      const hover = !ready && !v.isOpen && this.preview?.cell === i;
+      const target = ready ? 0.9 : hover ? 0.85 : 0;
       const rate = target > v.arrowsG.alpha ? (ready ? 180 : f.arrowRevealMs) : 200;
       const step = (dtMs / Math.max(1, rate)) * Math.max(target, 0.4);
       v.arrowsG.alpha = target > v.arrowsG.alpha ? Math.min(target, v.arrowsG.alpha + step) : Math.max(target, v.arrowsG.alpha - step);
@@ -402,7 +534,8 @@ export class GardenView extends Container {
     }
   }
 
-  private flyPetal(from: number, dir: number, to: number, landed: boolean, color: number, ms: number): void {
+  /** The arc a petal flies along from `from` in direction `dir`; t in 0..1. */
+  private flightPath(from: number, dir: number, to: number): (t: number) => { x: number; y: number } {
     const a = this.buds[from].position;
     const ang = dirAngle(dir) + this.rot;
     const dist = Math.sqrt(3) * this.s;
@@ -413,10 +546,15 @@ export class GardenView extends Container {
     const cy = (a.y + by) / 2 + Math.cos(ang) * arc;
     const ax = a.x;
     const ay = a.y;
-    const at = (t: number) => {
+    return (t: number) => {
       const u = 1 - t;
       return { x: u * u * ax + 2 * u * t * cx + t * t * bx, y: u * u * ay + 2 * u * t * cy + t * t * by };
     };
+  }
+
+  private flyPetal(from: number, dir: number, to: number, landed: boolean, color: number, ms: number): void {
+    const ang = dirAngle(dir) + this.rot;
+    const at = this.flightPath(from, dir, to);
 
     const trail = [0, 1, 2].map((i) => this.glowDot(color, this.s * (0.22 - i * 0.05)));
     const petal = petalSprite();

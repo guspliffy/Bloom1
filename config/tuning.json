@@ -86,6 +86,12 @@
     "vibrateTapMs": 10,
     "vibrateFinale": [10, 60, 10, 60, 20]
   },
+  "preview": {
+    "depth": 1,
+    "holdMs": 260,
+    "hoverDelayMs": 150,
+    "dimAlpha": 0.7
+  },
   "hud": {
     "maxPips": 14
   },

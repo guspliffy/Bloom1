@@ -14,7 +14,7 @@ TypeScript, Vite, PixiJS 8 (WebGL), Vitest, Web Audio (synthesized, no sound fil
 
 ## Folder map
 - `config/tuning.json`: every gameplay number. Code reads it through `src/tuning.ts`; never hardcode one.
-- `src/core/`: pure, deterministic game logic, no DOM or Pixi. `hex` board, `rules` (tap and cascade), `generator` (sprouts), `solver`, `adapt` (difficulty), `run` (one run), `tutorial` (lesson gardens and judging), `rng`.
+- `src/core/`: pure, deterministic game logic, no DOM or Pixi. `hex` board, `rules` (tap and cascade), `generator` (sprouts), `solver`, `adapt` (difficulty), `run` (one run), `tutorial` (lesson gardens and judging), `preview` (what a tap would do, for hold/hover), `rng`.
 - `src/view/`: Pixi rendering. `scene` is the blue-hour backdrop (sky, hedges, fireflies, night factor); `bed` bakes the garden bed; `garden` replays a resolved tap as a cascade of light; `budView` draws one bud from baked `textures`; `tween` is the ticker-driven tween and wait helper.
 - `src/audio/`: `schedule` puts a cascade on the note grid (pure, tested); `synth` is the Web Audio voice, chords, pad and ambient bed.
 - `src/audio/synth.ts`: pentatonic bloom notes, tap blip, refund chime, end chord.
