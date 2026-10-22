@@ -10,7 +10,9 @@
 
 **Playable:** full loop on phone and desktop. Four-lesson guided tutorial (first visit; ? card replays), 37-bud garden, refunds, sprouts, adaptive difficulty. Visual and audio redesign per GDD §4/§6/§7 (2026-10-21): blue-hour scene where each run is one evening, raised garden bed, lit petal sprites, flowers that light the garden, cascades on a 96 BPM note grid with chords, pad and finale, drop pips and pollen motes, Fraunces and Nunito type, title moment, "The garden rests" end sheet. `npm run dev` locally, or the GitHub Pages link.
 
-**In progress:** Phase A built and deployed; waiting for Jonny's gate play. Next: Phase B (garden goals, bud types, two-tap solver, garden editor).
+**In progress:** Phase A built and deployed; waiting for Jonny's gate play. 2026-10-22 Jonny asked how to make the graphics more fun: the creative director proposed a "lantern garden" (Claude Doc https://claude.ai/artifact/Cv6T4jy1r5MrLgy2xdpgcq). Wave 1 is built (plump buds with leaves, soil in a warm planter, a chain count in the flower's colour that grows, three flower shapes that grow along a chain, bigger flying petals with a catch ring). Wave 2 (lantern bud bodies, light spilling into the garden, tiers at 4/8/12 with a moth, phone layout, wind and a visiting moth) waits for Jonny's reaction. Next after that: Phase B (garden goals, bud types, two-tap solver, garden editor).
+
+**Look owner questions** (defaults in use): warm planter rim (yes); flowers grow along a chain (yes, up to 1.32×); a moth visits ready buds after 6 s idle (Wave 2, yes).
 
 **Next:** finish Phase A; open decisions below.
 

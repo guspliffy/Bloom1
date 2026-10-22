@@ -49,15 +49,16 @@ export function shadowTexture(): Texture {
 /** Petal length in texture pixels; sprites scale it to len·s. */
 export const PETAL_TEX_LEN = 128;
 export const PETAL_TEX_W = 100;
-/** Petal half-width as a fraction of its length (0.21s / 0.55s). */
-export const PETAL_ASPECT = 0.382;
+/** Petal half-width as a fraction of its length (0.30s / 0.70s). */
+export const PETAL_ASPECT = 0.43;
 
 function petalPath(g: CanvasRenderingContext2D, len: number, wid: number, cy: number): void {
   // Base at x=0, tip at x=len, pointing right.
   g.beginPath();
   g.moveTo(0, cy);
-  g.bezierCurveTo(len * 0.35, cy - wid, len * 0.95, cy - wid * 0.55, len, cy);
-  g.bezierCurveTo(len * 0.95, cy + wid * 0.55, len * 0.35, cy + wid, 0, cy);
+  // Widest near 0.45·len, so the petal reads plump rather than a thin blade.
+  g.bezierCurveTo(len * 0.12, cy - wid * 1.2, len * 0.88, cy - wid * 1.0, len, cy);
+  g.bezierCurveTo(len * 0.88, cy + wid * 1.0, len * 0.12, cy + wid * 1.2, 0, cy);
   g.closePath();
 }
 
@@ -69,8 +70,8 @@ export function petalTexture(): Texture {
     const cy = PETAL_TEX_W / 2;
     petalPath(g, len, wid, cy);
     const grad = g.createLinearGradient(0, 0, len, 0);
-    grad.addColorStop(0, '#a8a8a8');
-    grad.addColorStop(0.55, '#e6e6e6');
+    grad.addColorStop(0, '#7a7a7a');
+    grad.addColorStop(0.5, '#e2e2e2');
     grad.addColorStop(1, '#ffffff');
     g.fillStyle = grad;
     g.fill();
@@ -83,6 +84,13 @@ export function petalTexture(): Texture {
     g.fill();
     g.lineWidth = 2;
     g.strokeStyle = 'rgba(255,255,255,0.22)';
+    g.stroke();
+    // Centre vein.
+    g.beginPath();
+    g.moveTo(2, cy);
+    g.quadraticCurveTo(len * 0.45, cy - 1.5, len * 0.8, cy);
+    g.lineWidth = 1.2;
+    g.strokeStyle = 'rgba(0,0,0,0.12)';
     g.stroke();
   });
 }
@@ -102,6 +110,12 @@ export function coreTexture(): Texture {
     g.beginPath();
     g.arc(22, 22, 8, 0, Math.PI * 2);
     g.fill();
+    // A dark rim separates the core from the petals and the soil.
+    g.beginPath();
+    g.arc(32, 32, 29.5, 0, Math.PI * 2);
+    g.lineWidth = 3;
+    g.strokeStyle = 'rgba(74,53,80,0.5)';
+    g.stroke();
   });
 }
 

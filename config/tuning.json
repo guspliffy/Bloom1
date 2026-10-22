@@ -37,7 +37,7 @@
     "fireflies": 22,
     "fireflyAttractPx": 40,
     "fireflyAttractMs": 2000,
-    "vignette": 0.28,
+    "vignette": 0.22,
     "grainAlpha": 0.035
   },
   "feel": {
@@ -50,6 +50,8 @@
     "squashScale": 0.9,
     "bloomOvershoot": 1.12,
     "bloomOpenMs": 520,
+    "flowerGrowPerBloom": 0.04,
+    "flowerGrowMaxK": 8,
     "petalUnfoldStaggerMs": 20,
     "haloOpenAlpha": [0.55, 0.2],
     "haloOpenMs": 600,
@@ -76,6 +78,10 @@
     "readyBreathe": 0.03,
     "idleBreathe": 0.015,
     "idleLeanDeg": 1.5,
+    "petalLen": 0.7,
+    "petalHalfW": 0.3,
+    "petalLenSmall": 0.62,
+    "leafLen": 0.42,
     "jitterDeg": 3,
     "jitterScale": 0.03,
     "jitterHueDeg": 3,

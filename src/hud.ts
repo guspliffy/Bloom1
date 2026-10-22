@@ -145,11 +145,14 @@ export class Hud {
     return this.shownPollen;
   }
 
-  /** Chain count "×n", shown from the third bloom of a chain. */
-  setChain(n: number): void {
+  /** Chain count "×n", shown from the third bloom of a chain, in the latest flower's colour; it glows and grows on long chains. */
+  setChain(n: number, color = '#ffe9c4'): void {
     clearTimeout(this.chainHide);
     if (n < 3) return;
     this.chain.textContent = `×${n}`;
+    this.chain.style.setProperty('--chain-color', color);
+    this.chain.classList.toggle('long', n >= tuning.feel.holdBreathChain);
+    this.chain.classList.toggle('finale', n >= tuning.audio.finaleChain);
     this.chain.classList.add('show', 'bump');
     requestAnimationFrame(() => requestAnimationFrame(() => this.chain.classList.remove('bump')));
   }

@@ -354,6 +354,16 @@ export class GardenView extends Container {
     this.ripple(v.x, v.y, palette.drop, 0.55);
   }
 
+  private catchRing(x: number, y: number, color: number): void {
+    const ring = new Graphics();
+    ring.position.set(x, y);
+    this.fx.addChild(ring);
+    void this.tw.to(300, (t) => {
+      if (ring.destroyed) return;
+      ring.clear().circle(0, 0, this.s * (0.5 + 0.4 * t)).stroke({ width: 2, color, alpha: 0.35 * (1 - t) });
+    }).then(() => ring.destroy());
+  }
+
   private ripple(x: number, y: number, color: number, alpha: number): void {
     const ring = new Sprite(glowTexture());
     ring.anchor.set(0.5);
@@ -444,6 +454,8 @@ export class GardenView extends Container {
     const v = this.buds[cue.cell];
     const f = tuning.feel;
     const color = palette.bloom[cue.k % palette.bloom.length];
+    // Later flowers in a chain open a little bigger: the chain reads as a garden growing.
+    const grow = 1 + f.flowerGrowPerBloom * Math.min(cue.k, f.flowerGrowMaxK);
     v.isOpen = true;
     v.petals = 0;
     v.arrowsG.visible = false;
@@ -457,13 +469,13 @@ export class GardenView extends Container {
       v.budC.visible = false;
       v.anim = '';
       v.budC.tint = 0xffffff;
-      v.setFlower(color);
+      v.setFlower(color, cue.k);
       v.flower.visible = true;
       v.flower.alpha = 1;
       const o = f.bloomOvershoot;
       void this.tw.to(f.bloomOpenMs, (t) => {
         const sc = t < 0.45 ? 0.9 + (o - 0.9) * ease.outCubic(t / 0.45) : o + (1 - o) * ease.inOutSine((t - 0.45) / 0.55);
-        v.flower.scale.set(sc);
+        v.flower.scale.set(sc * grow);
         v.unfold(t * f.bloomOpenMs);
       }, { ease: ease.linear });
 
@@ -472,7 +484,7 @@ export class GardenView extends Container {
       halo.blendMode = 'add';
       halo.tint = color;
       halo.position.copyFrom(v.position);
-      halo.width = halo.height = this.s * 3.2;
+      halo.width = halo.height = this.s * 3.2 * grow;
       this.light.addChild(halo);
       v.bloomHalo?.destroy();
       v.bloomHalo = halo;
@@ -560,10 +572,10 @@ export class GardenView extends Container {
     const ang = dirAngle(dir) + this.rot;
     const at = this.flightPath(from, dir, to);
 
-    const trail = [0, 1, 2].map((i) => this.glowDot(color, this.s * (0.22 - i * 0.05)));
+    const trail = [0, 1, 2, 3, 4].map((i) => this.glowDot(color, this.s * (0.26 - i * 0.04)));
     const petal = petalSprite();
     petal.tint = color;
-    shapePetal(petal, this.s * 0.34, this.s * 0.13, 0, 0);
+    shapePetal(petal, this.s * 0.46, this.s * 0.17, 0, 0);
     petal.anchor.set(0.5);
     this.fx.addChild(petal);
     void this.tw.to(ms, (t) => {
@@ -571,9 +583,9 @@ export class GardenView extends Container {
       petal.position.set(p.x, p.y);
       petal.rotation = ang + 1.2 * (t - 0.5);
       trail.forEach((d, i) => {
-        const q = at(Math.max(0, t - 0.08 * (i + 1)));
+        const q = at(Math.max(0, t - 0.06 * (i + 1)));
         d.position.set(q.x, q.y);
-        d.alpha = 0.6 - i * 0.18;
+        d.alpha = 0.65 - i * 0.12;
       });
     }, { ease: ease.inOutSine }).then(() => {
       for (const d of trail) {
@@ -584,9 +596,11 @@ export class GardenView extends Container {
         const v = this.buds[to];
         v.setPetals(Math.min(MAX_PETALS, v.petals + 1));
         v.anim = 'pop';
-        void this.tw.to(200, (t) => v.budC.scale.set(v.jitterScale * (1 + 0.2 * Math.sin(Math.PI * t))), { ease: ease.linear }).then(() => {
+        void this.tw.to(220, (t) => v.budC.scale.set(v.jitterScale * (1 + 0.28 * Math.sin(Math.PI * t))), { ease: ease.linear }).then(() => {
           if (v.anim === 'pop') v.anim = '';
         });
+        // A small ring in the petal's colour marks the catch.
+        this.catchRing(v.x, v.y, color);
         return;
       }
       if (last) return this.restPetal(petal, to, ang);
@@ -665,9 +679,10 @@ export class GardenView extends Container {
       const halo = v.bloomHalo;
       v.bloomHalo = null;
       const h0 = halo?.alpha ?? 0;
+      const fs = v.flower.scale.x;
       const fade = this.tw.to(320, (t) => {
         v.flower.alpha = 1 - t;
-        v.flower.scale.set(1 - 0.35 * t);
+        v.flower.scale.set(fs * (1 - 0.35 * t));
         if (halo && !halo.destroyed) halo.alpha = h0 * (1 - t);
       }, { delay }).then(() => halo?.destroy());
       return this.tw.wait(delay + 140).then(() => {

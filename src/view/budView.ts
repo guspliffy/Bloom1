@@ -20,6 +20,14 @@ export function shapePetal(p: Sprite, len: number, halfW: number, inner: number,
   p.position.set(Math.cos(angle) * inner, Math.sin(angle) * inner);
 }
 
+/** Three flower silhouettes (daisy, star, peony), so a chain reads as a garden rather than a row of stamps. */
+const FLOWER_KINDS = [
+  { ring: 8, len: 0.82, halfW: 0.26, innerTurn: 0 },
+  { ring: 6, len: 0.9, halfW: 0.18, innerTurn: 0 },
+  { ring: 10, len: 0.7, halfW: 0.32, innerTurn: (18 * Math.PI) / 180 },
+];
+const MAX_RING = Math.max(...FLOWER_KINDS.map((k) => k.ring));
+
 function hash(i: number, salt: number): number {
   let h = (i * 374761393 + salt * 668265263) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -39,11 +47,15 @@ export class BudView extends Container {
   readonly arrowsG = new Graphics();
   readonly budC = new Container();
   private petalSprites: Sprite[] = [];
+  /** Two leaves under every bud, so each cell reads as a plant even with no petals. */
+  private leaves = [petalSprite(), petalSprite()];
   /** The petal a tap would add, shown faintly while this bud is previewed. */
   readonly ghost = petalSprite();
   private core = new Sprite(coreTexture());
   readonly flower = new Container();
   readonly flowerPetals: Sprite[] = [];
+  /** Silhouette of the current flower: petals per ring, outer petal length and half-width (s units), inner ring offset. */
+  private kind = FLOWER_KINDS[0];
   private pistil = new Graphics();
   private flowerCore = new Sprite(coreTexture());
   /** Additive light of the open flower; lives in the garden's light layer. */
@@ -93,8 +105,10 @@ export class BudView extends Container {
       this.budC.addChild(p);
     }
     this.ghost.visible = false;
+    this.budC.addChildAt(this.leaves[0], 0);
+    this.budC.addChildAt(this.leaves[1], 0);
     this.budC.addChild(this.ghost, this.core);
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < MAX_RING * 2; i++) {
       const p = petalSprite();
       this.flowerPetals.push(p);
       this.flower.addChild(p);
@@ -157,8 +171,17 @@ export class BudView extends Container {
     }
   }
 
+  /** Bud petal length and half-width; shorter on small screens so facing petals don't touch. */
+  private petalSize(): [number, number] {
+    const f = tuning.feel;
+    const len = this.s < 32 ? Math.min(f.petalLen, f.petalLenSmall) : f.petalLen;
+    return [this.s * len, this.s * len * (f.petalHalfW / f.petalLen)];
+  }
+
   private drawPetals(): void {
     const s = this.s;
+    const f = tuning.feel;
+    const [len, halfW] = this.petalSize();
     const n = Math.min(this.petals, MAX_PETALS);
     const base = n >= MAX_PETALS ? palette.petalReady : palette.petalIdle;
     const tint = jitterColor(base, this.hue1, this.hue2, tuning.feel.jitterHueDeg / 120);
@@ -168,17 +191,23 @@ export class BudView extends Container {
       if (!p.visible) return;
       const a = this.angleOf(this.arrows[i]);
       this.petalAngles.push(a);
-      shapePetal(p, s * 0.55, s * 0.21, s * 0.08, a);
+      shapePetal(p, len, halfW, s * 0.08, a);
       p.tint = tint;
     });
     const seed = n === 0;
-    this.core.width = this.core.height = s * (seed ? 0.18 : 0.26);
+    const ready = n >= MAX_PETALS;
+    // Leaves sit low-left and low-right in screen space whatever the board's rotation.
+    this.leaves.forEach((l, i) => {
+      shapePetal(l, s * f.leafLen, s * f.leafLen * 0.43, s * 0.04, Math.PI / 2 + (i === 0 ? -1 : 1) * 0.95);
+      l.tint = ready ? palette.leafReady : palette.leaf;
+    });
+    this.core.width = this.core.height = s * (seed ? 0.22 : 0.34);
     this.core.tint = seed ? palette.seed : 0xffffff;
-    this.core.alpha = seed ? 0.55 : 1;
-    this.shadow.width = s * 0.9 * (seed ? 0.5 : 1);
-    this.shadow.height = s * 0.45 * (seed ? 0.5 : 1);
-    this.shadow.position.set(0, s * 0.16);
-    this.shadow.alpha = 0.3;
+    this.core.alpha = seed ? 0.7 : 1;
+    this.shadow.width = s * 1.1 * (seed ? 0.6 : 1);
+    this.shadow.height = s * 0.5 * (seed ? 0.6 : 1);
+    this.shadow.position.set(0, s * 0.18);
+    this.shadow.alpha = 0.42;
   }
 
   /** Show where a tap would add its petal (preview); false hides it. */
@@ -186,7 +215,8 @@ export class BudView extends Container {
     const n = this.petals;
     this.ghost.visible = show && !this.isOpen && n < MAX_PETALS && n < this.arrows.length;
     if (!this.ghost.visible) return;
-    shapePetal(this.ghost, this.s * 0.55, this.s * 0.21, this.s * 0.08, this.angleOf(this.arrows[n]));
+    const [len, halfW] = this.petalSize();
+    shapePetal(this.ghost, len, halfW, this.s * 0.08, this.angleOf(this.arrows[n]));
     this.ghost.tint = n + 1 >= MAX_PETALS ? palette.petalReady : palette.petalIdle;
   }
 
@@ -205,11 +235,14 @@ export class BudView extends Container {
   }
 
   /** Prepare the open flower in the chain hue (petals start folded; `unfold` animates them). */
-  setFlower(color: number): void {
+  setFlower(color: number, k = 0): void {
     const s = this.s;
     const inner = lerpColor(color, 0xfff4e0, 0.55);
+    this.kind = FLOWER_KINDS[Math.floor(hash(this.cell * 13 + k, 7) * FLOWER_KINDS.length)];
+    const ring = this.kind.ring;
     this.flowerPetals.forEach((p, i) => {
-      p.tint = i < 8 ? color : inner;
+      p.visible = i < ring * 2;
+      p.tint = i < ring ? color : inner;
     });
     this.flowerCore.width = this.flowerCore.height = s * 0.3;
     const g = this.pistil.clear();
@@ -224,16 +257,19 @@ export class BudView extends Container {
   unfold(ms: number): void {
     const s = this.s;
     const f = tuning.feel;
-    const span = Math.max(1, f.bloomOpenMs - 15 * f.petalUnfoldStaggerMs);
+    const { ring, len, halfW, innerTurn } = this.kind;
+    const span = Math.max(1, f.bloomOpenMs - (ring * 2 - 1) * f.petalUnfoldStaggerMs);
+    const step = (Math.PI * 2) / ring;
     this.flowerPetals.forEach((p, i) => {
+      if (i >= ring * 2) return;
       const t = Math.max(0, Math.min(1, (ms - i * f.petalUnfoldStaggerMs) / span));
       const e = 1 - (1 - t) ** 3;
-      const outer = i < 8;
-      const k = i % 8;
-      const rest = (k * Math.PI) / 4 + (outer ? Math.PI / 8 : 0) + this.rot;
+      const outer = i < ring;
+      const k = i % ring;
+      const rest = k * step + (outer ? step / 2 : innerTurn) + this.rot;
       const a = rest - (25 * Math.PI * (1 - e)) / 180;
-      if (outer) shapePetal(p, s * 0.82 * (0.6 + 0.4 * e), s * 0.26, s * 0.08, a);
-      else shapePetal(p, s * 0.5 * (0.6 + 0.4 * e), s * 0.16, s * 0.06, a);
+      if (outer) shapePetal(p, s * len * (0.6 + 0.4 * e), s * halfW, s * 0.08, a);
+      else shapePetal(p, s * len * 0.6 * (0.6 + 0.4 * e), s * halfW * 0.62, s * 0.06, a);
       p.alpha = Math.min(1, t * 3) * (outer ? 0.95 : 0.8);
     });
   }

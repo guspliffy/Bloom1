@@ -6,6 +6,7 @@ import { previewTap } from './core/preview';
 import { bestSingleTap } from './core/solver';
 import { chainStop } from './core/stop';
 import { tutorialLessons, type Lesson } from './core/tutorial';
+import { lerpColor, palette } from './view/palette';
 import type { Hud } from './hud';
 import { tuning } from './tuning';
 import { hudMoteCount, REDUCED_MOTION, type GardenView, type PlayHooks } from './view/garden';
@@ -173,7 +174,8 @@ export class Game {
   private hooks(onMote: () => void, toHud: boolean): PlayHooks {
     return {
       onBloom: (cue, x, y) => {
-        this.hud.setChain(cue.k + 1);
+        const hue = lerpColor(palette.bloom[cue.k % palette.bloom.length], 0xffe9c4, 0.5);
+        this.hud.setChain(cue.k + 1, `#${hue.toString(16).padStart(6, '0')}`);
         this.scene.attract(x, y);
       },
       pollenTarget: () => this.hud.pollenAnchor(),
