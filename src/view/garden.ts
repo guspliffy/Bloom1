@@ -7,8 +7,8 @@ import type { Sprout } from '../core/run';
 import { tuning } from '../tuning';
 import { bedTexture } from './bed';
 import { BudView, petalSprite, shapePetal } from './budView';
-import { palette } from './palette';
 import { dropTexture, glowTexture } from './textures';
+import { palette } from './palette';
 import { ease, type Tweener } from './tween';
 
 const FINE_POINTER = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
@@ -49,6 +49,8 @@ export class GardenView extends Container {
   private light = new Container();
   private budLayer = new Container();
   private fx = new Container();
+  /** Fallen petals that show why a chain stopped; cleared with the garden. */
+  private marks = new Container();
   private chainLight = new Sprite(glowTexture());
   private chainTarget = { x: 0, y: 0, size: 0, alpha: 0 };
   private dimmed = new Set<number>();
@@ -76,7 +78,7 @@ export class GardenView extends Container {
     this.chainLight.tint = palette.cascadeLight;
     this.chainLight.alpha = 0;
     this.light.addChild(this.chainLight);
-    this.addChild(this.bed, this.light, this.budLayer, this.previewG, this.fx);
+    this.addChild(this.bed, this.light, this.budLayer, this.marks, this.previewG, this.fx);
     if (typeof window !== 'undefined') {
       window.addEventListener('pointermove', (e) => this.pointerMove(e));
       window.addEventListener('pointerup', (e) => this.pointerUp(e, false));
@@ -202,6 +204,7 @@ export class GardenView extends Container {
       b.bloomHalo?.destroy();
       b.destroy({ children: true });
     }
+    for (const m of this.marks.removeChildren()) m.destroy();
     this.dimmed.clear();
     this.restDim = false;
     this.preview = null;
@@ -412,6 +415,7 @@ export class GardenView extends Container {
 
     const cueOf = new Map(sched.cues.map((c) => [c.cell, c]));
     let flightsEnd = 0;
+    const lastWave = result.steps.length - 1;
     result.steps.forEach((step, w) => {
       const nextAt = sched.waveAt[w + 1];
       for (const tr of step.transfers) {
@@ -420,7 +424,7 @@ export class GardenView extends Container {
         const dur = nextAt !== undefined ? Math.max(100, nextAt - start) : f.petalFlightMs;
         flightsEnd = Math.max(flightsEnd, start + dur);
         const color = palette.bloom[src.k % palette.bloom.length];
-        jobs.push(this.tw.wait(start).then(() => this.flyPetal(tr.from, tr.dir, tr.to, tr.landed, color, dur)));
+        jobs.push(this.tw.wait(start).then(() => this.flyPetal(tr.from, tr.dir, tr.to, tr.landed, color, dur, w === lastWave)));
       }
     });
 
@@ -552,7 +556,7 @@ export class GardenView extends Container {
     };
   }
 
-  private flyPetal(from: number, dir: number, to: number, landed: boolean, color: number, ms: number): void {
+  private flyPetal(from: number, dir: number, to: number, landed: boolean, color: number, ms: number, last: boolean): void {
     const ang = dirAngle(dir) + this.rot;
     const at = this.flightPath(from, dir, to);
 
@@ -585,6 +589,7 @@ export class GardenView extends Container {
         });
         return;
       }
+      if (last) return this.restPetal(petal, to, ang);
       // Lost petals flutter down and fade.
       const x0 = petal.x;
       const y0 = petal.y;
@@ -597,6 +602,51 @@ export class GardenView extends Container {
         petal.alpha = 1 - t;
       }, { ease: ease.linear }).then(() => petal.destroy());
     });
+  }
+
+  /**
+   * A petal of the chain's last wave was lost, so it stays a moment where it fell to show why the chain
+   * stopped: off the edge it drops onto the rim; onto an open flower it bounces back off the petals.
+   */
+  private restPetal(petal: Sprite, to: number, ang: number): void {
+    const f = tuning.feel;
+    const s = this.s;
+    this.marks.addChild(petal);
+    const x0 = petal.x;
+    const y0 = petal.y;
+    const r0 = petal.rotation;
+    const sx = petal.scale.x;
+    const sy = petal.scale.y;
+    const bounce = to >= 0;
+    // A bounced petal rests in the gap halfway back, clear of the bud that sprouts where the flower was.
+    const x1 = bounce ? x0 - Math.cos(ang) * s * 0.8 : x0 + s * 0.08;
+    const y1 = bounce ? y0 - Math.sin(ang) * s * 0.8 : y0 + s * 0.32;
+    const shade = this.glowDot(Number(petal.tint), s * 0.8, this.marks);
+    shade.position.set(x1, y1 + s * 0.04);
+    shade.alpha = 0;
+    const alive = () => !petal.destroyed && !shade.destroyed;
+    void this.tw.to(bounce ? 380 : 480, (t) => {
+      if (!alive()) return;
+      const hop = bounce ? Math.sin(Math.PI * t) * s * 0.28 : Math.sin(t * 6) * s * 0.06 * (1 - t);
+      petal.position.set(x0 + (x1 - x0) * t + (bounce ? 0 : hop), y0 + (y1 - y0) * t - (bounce ? hop : 0));
+      petal.rotation = r0 + (bounce ? 2.4 : 0.9) * t;
+      petal.scale.set(sx * (1 + 0.15 * t), sy * (1 + 0.15 * t));
+      shade.alpha = 0.35 * t;
+    }, { ease: ease.outCubic })
+      .then(() => {
+        // A faint ring where it comes to rest draws the eye without a sound or a word.
+        if (alive()) this.ripple(x1, y1, Number(petal.tint), 0.3);
+        return this.tw.wait(f.stopMarkMs);
+      })
+      .then(() => this.tw.to(f.stopMarkFadeMs, (t) => {
+        if (!alive()) return;
+        petal.alpha = 1 - t;
+        shade.alpha = 0.35 * (1 - t);
+      }))
+      .then(() => {
+        if (!petal.destroyed) petal.destroy();
+        if (!shade.destroyed) shade.destroy();
+      });
   }
 
   /** Snap displayed petal counts to the logic state (guards against any drift after a chain). */

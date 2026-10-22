@@ -4,6 +4,7 @@ import { resolveTap, type Bud, type TapResult } from './core/rules';
 import { Run } from './core/run';
 import { previewTap } from './core/preview';
 import { bestSingleTap } from './core/solver';
+import { chainStop } from './core/stop';
 import { tutorialLessons, type Lesson } from './core/tutorial';
 import type { Hud } from './hud';
 import { tuning } from './tuning';
@@ -15,6 +16,9 @@ const TUTORIAL_KEY = 'bloom.tutorialDone.v2';
 const BEST_KEY = 'bloom.best';
 const FIRST_RUN_KEY = 'bloom.firstRunDone';
 const PREVIEW_HINT_KEY = 'bloom.previewHintDone';
+const SCORE_HINT_KEY = 'bloom.scoreHintDone';
+const EDGE_HINT_KEY = 'bloom.edgeHintDone';
+const OPEN_HINT_KEY = 'bloom.openHintDone';
 
 function store(key: string, value?: string): string | null {
   try {
@@ -235,14 +239,27 @@ export class Game {
     this.hud.setDrops(run.drops);
     this.garden.sync(run.buds);
     this.busy = false;
-    if (!out.ended && store(PREVIEW_HINT_KEY) !== '1') {
-      store(PREVIEW_HINT_KEY, '1');
-      this.hud.toast(matchMedia('(pointer: fine)').matches ? 'Hover a bud to see where its petals go.' : 'Hold a bud to see where its petals go.', 4200);
-    }
+    if (!out.ended) this.teach(out.result);
     if (out.ended) {
       store(FIRST_RUN_KEY, '1');
       await this.finish(run, epoch);
     } else this.armIdleHint();
+  }
+
+  /** At most one first-time line after a tap, most useful first: the score, the preview, why a chain stopped. */
+  private teach(result: TapResult): void {
+    const once = (key: string, text: string, ms = 4200): boolean => {
+      if (store(key) === '1') return false;
+      store(key, '1');
+      this.hud.toast(text, ms);
+      return true;
+    };
+    if (result.bloomed.length >= tuning.hud.scoreHintChain && once(SCORE_HINT_KEY, 'Longer chains are worth much more.')) return;
+    const fine = matchMedia('(pointer: fine)').matches;
+    if (once(PREVIEW_HINT_KEY, fine ? 'Hover a bud to see where its petals go.' : 'Hold a bud to see where its petals go.')) return;
+    const kinds = new Set(chainStop(result).map((m) => m.kind));
+    if (kinds.has('edge') && once(EDGE_HINT_KEY, 'Petals off the edge are lost.', 3400)) return;
+    if (kinds.has('open')) once(OPEN_HINT_KEY, 'Open flowers catch no petals.', 3400);
   }
 
   private async lessonTap(cell: number): Promise<void> {

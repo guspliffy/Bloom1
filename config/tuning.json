@@ -63,6 +63,8 @@
     "holdBreathMs": 220,
     "holdBreathScale": 0.35,
     "fallenPetalMs": 2200,
+    "stopMarkMs": 1600,
+    "stopMarkFadeMs": 700,
     "pollenMotesPerBloom": 10,
     "pollenToHudMotes": 3,
     "pollenFlightMs": 700,
@@ -93,7 +95,8 @@
     "dimAlpha": 0.7
   },
   "hud": {
-    "maxPips": 14
+    "maxPips": 14,
+    "scoreHintChain": 5
   },
   "audio": {
     "masterVolume": 0.55,

@@ -9,6 +9,7 @@ import { Rng } from '../src/core/rng';
 import { chainPollen, chainRefund, resolveTap, type Bud } from '../src/core/rules';
 import { Run } from '../src/core/run';
 import { bestSingleTap } from '../src/core/solver';
+import { chainStop } from '../src/core/stop';
 
 const t = structuredClone(defaults);
 
@@ -211,5 +212,40 @@ describe('preview', () => {
     const before = JSON.stringify(buds);
     previewTap(board, buds, 0, 99);
     expect(JSON.stringify(buds)).toBe(before);
+  });
+});
+
+describe('chain stop', () => {
+  const board = makeBoard(3);
+  it('explains every petal of the last wave and never a bloom', () => {
+    const rng = new Rng(5);
+    const buds = generateGarden(board, defaults.sprout, 0.5, rng);
+    for (let c = 0; c < board.size; c++) {
+      const r = resolveTap(board, buds, c);
+      const marks = chainStop(r);
+      if (r.steps.length === 0) {
+        expect(marks).toEqual([]);
+        continue;
+      }
+      expect(marks.length).toBe(r.steps[r.steps.length - 1].transfers.length);
+      for (const m of marks) {
+        if (m.kind === 'edge') expect(m.to).toBe(-1);
+        if (m.kind === 'open') expect(r.bloomed).toContain(m.to);
+        if (m.kind === 'short') expect(r.petals[m.to]).toBeLessThan(4);
+      }
+    }
+  });
+  it('names the edge and an open flower', () => {
+    // Centre bud blooms into a ready neighbour, which sends one petal back onto the open centre.
+    const centre = cellIndex(board, 0, 0);
+    const buds: Bud[] = Array.from({ length: board.size }, () => ({ petals: 0, arrows: [0, 1, 2] }));
+    buds[centre] = { petals: 3, arrows: [0, 2, 4] };
+    const east = board.neighbors[centre][0];
+    buds[east] = { petals: 3, arrows: [3, 1, 5] };
+    const r = resolveTap(board, buds, centre);
+    expect(r.steps.length).toBe(2);
+    const kinds = chainStop(r).map((m) => m.kind);
+    expect(kinds).toContain('open');
+    expect(kinds).toContain('short');
   });
 });
