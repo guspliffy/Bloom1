@@ -16,7 +16,7 @@
 
 **Open alpha decisions** (decision cards were posted to Jonny on 2026-10-22; check the thread for answers)
 - Decision cards re-posted 2026-10-22 in the "Bloom alpha" thread.
-- Preview strength: first step only (current default, `preview.depth` 1), whole chain (`depth` 99), or by difficulty (Gentle whole, Lively first step, Wild arrows only). Recommended: first step.
+- Preview strength: DECIDED 2026-10-22 by Jonny: first step only (`preview.depth` 1).
 - Modes: DECIDED 2026-10-22 by Jonny: journey + endless + daily.
 - OK to recruit 5-10 outside testers and collect anonymous play stats? Needed by Phase D.
 
