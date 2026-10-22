@@ -5,7 +5,7 @@ import { generateGarden } from '../src/core/generator';
 import { previewTap } from '../src/core/preview';
 import { cellIndex, makeBoard } from '../src/core/hex';
 import { tutorialLessons } from '../src/core/tutorial';
-import { Rng } from '../src/core/rng';
+import { Rng, mixSeed } from '../src/core/rng';
 import { chainPollen, chainRefund, resolveTap, type Bud } from '../src/core/rules';
 import { Run } from '../src/core/run';
 import { bestSingleTap } from '../src/core/solver';
@@ -216,6 +216,81 @@ describe('run', () => {
       return { log, pollen: run.pollen };
     };
     expect(play()).toEqual(play());
+  });
+});
+
+describe('garden keys', () => {
+  /** Plays the best single tap each turn until `gardens` are lit or the run ends. */
+  const play = (run: Run, gardens = 99) => {
+    const log: number[] = [];
+    while (!run.ended && run.gardensLit < gardens) {
+      const b = bestSingleTap(run.board, run.buds);
+      log.push(run.tap(b.cell >= 0 ? b.cell : 5).result.bloomed.length);
+    }
+    return log;
+  };
+
+  it('mixes seed and garden index into distinct streams', () => {
+    const seen = new Set<number>();
+    for (let seed = 1; seed < 20; seed++) for (let k = 0; k < 20; k++) seen.add(mixSeed(seed, k));
+    expect(seen.size).toBe(19 * 20);
+  });
+
+  it('rebuilds any garden of an evening from its key: same buds, same lanterns', () => {
+    // Compared at plant time: a key reproduces the garden as planted, before any taps.
+    const rebuilds = (run: Run) => {
+      const again = new Run(t, 0, run.key);
+      expect(again.buds).toEqual(run.buds);
+      expect(again.lanterns).toEqual(run.lanterns);
+      expect(again.key).toEqual(run.key);
+      expect(again.seed).toBe(run.seed);
+    };
+    let planted = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const run = new Run(t, seed);
+      rebuilds(run);
+      let guard = 0;
+      while (!run.ended && guard++ < 400) {
+        const b = bestSingleTap(run.board, run.buds);
+        const lit = run.gardensLit;
+        run.tap(b.cell >= 0 ? b.cell : 5);
+        if (run.gardensLit > lit) {
+          rebuilds(run);
+          planted++;
+        }
+      }
+    }
+    expect(planted).toBeGreaterThan(0);
+  });
+
+  it('records the difficulty the garden was planted at and starts the replay there', () => {
+    const run = new Run(t, 7);
+    run.adapter.difficulty = 0.8;
+    // Plant garden 1 by lighting garden 0: the key must carry the difficulty at that moment.
+    let guard = 0;
+    while (run.gardensLit === 0 && !run.ended && guard++ < 400) {
+      const b = bestSingleTap(run.board, run.buds);
+      run.tap(b.cell >= 0 ? b.cell : 5);
+    }
+    if (run.gardensLit === 0) return;
+    expect(run.key.k).toBe(1);
+    expect(run.key.difficulty).toBe(run.adapter.difficulty);
+    const again = new Run(t, 0, run.key);
+    expect(again.adapter.difficulty).toBe(run.key.difficulty);
+    expect(again.drops).toBe(t.run.startDrops);
+    expect(again.gardensLit).toBe(0);
+  });
+
+  it('a replayed key plays out deterministically, sprouts included', () => {
+    const run = new Run(t, 321);
+    play(run, 1);
+    const key = { ...run.key };
+    const go = () => {
+      const r = new Run(t, 0, key);
+      const log = play(r);
+      return { log, pollen: r.pollen, stars: r.stars, buds: r.buds };
+    };
+    expect(go()).toEqual(go());
   });
 });
 

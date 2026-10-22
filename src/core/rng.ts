@@ -25,3 +25,11 @@ export class Rng {
     return weights.length - 1;
   }
 }
+
+/** Seed for garden k of an evening: well-mixed, so neighbouring gardens and seeds share no structure. */
+export function mixSeed(seed: number, k: number): number {
+  let h = ((seed >>> 0) ^ Math.imul(k + 1, 0x9e3779b1)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}

@@ -1,7 +1,7 @@
 import { scheduleChain, type ChainSchedule } from './audio/schedule';
 import { chainStep, type Synth } from './audio/synth';
 import { resolveTap, type Bud, type TapResult } from './core/rules';
-import { Run } from './core/run';
+import { Run, type GardenKey } from './core/run';
 import { previewTap } from './core/preview';
 import { bestSingleTap } from './core/solver';
 import { chainStop } from './core/stop';
@@ -41,6 +41,8 @@ export class Game {
   /** Bumped on every new garden so continuations from an abandoned chain stop quietly. */
   private epoch = 0;
   private fixedSeed: number | null;
+  /** Key of the garden left on the board when the evening ended; the summary's replay link starts it. */
+  private restKey: GardenKey | null = null;
   private idleTimer = 0;
   /** The first gesture's unlock; the session's first chain waits for it (at most 200 ms). */
   private unlocking: Promise<void> = Promise.resolve();
@@ -59,6 +61,10 @@ export class Game {
     const params = new URLSearchParams(location.search);
     const seed = params.get('seed');
     this.fixedSeed = seed !== null && seed !== '' ? Number(seed) >>> 0 : null;
+    document.getElementById('btn-replay')!.addEventListener('click', () => {
+      synth.unlock();
+      if (this.restKey) this.newRun(this.restKey);
+    });
     garden.onTap = (cell) => void this.tap(cell);
     garden.onPreview = (cell) => {
       if (this.busy || this.hud.howtoOpen) return null;
@@ -124,11 +130,12 @@ export class Game {
     this.garden.sproutIn();
   }
 
-  newRun(): void {
+  /** A fresh evening; with `from`, one that starts at exactly that garden (same buds and lanterns, full drops). */
+  newRun(from?: GardenKey): void {
     if (this.inTutorial) store(TUTORIAL_KEY, '1');
     this.resetScene();
     const seed = this.fixedSeed ?? (Math.random() * 2 ** 32) >>> 0;
-    this.run = new Run(tuning, seed);
+    this.run = new Run(tuning, seed, from);
     this.lessons = [];
     this.hud.hideCoach();
     this.garden.hintCells = [];
@@ -370,6 +377,7 @@ export class Game {
     const prev = Number(store(BEST_KEY) ?? 0);
     const newBest = run.pollen > prev;
     if (newBest) store(BEST_KEY, String(run.pollen));
+    this.restKey = { ...run.key };
     this.hud.showSummary(
       {
         gardensLit: run.gardensLit,

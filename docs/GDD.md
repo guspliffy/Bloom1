@@ -29,7 +29,7 @@ Read the garden and its 3 lantern posts → tap a bud (1 drop, +1 petal) → at 
   2. Arrows (radius 1). Open: "A glowing bud is ready. Tap it." Continue (other bud): "Tap the glowing one." Pass: "Its petals flew along the arrows."
   3. Chain and preview (radius 1, three ready buds in a row, the left one circled). Open: "Hold the circled bud." / "Hover the circled bud." When the preview of the circled bud shows (lesson hook `onPreview(cell)`): "See the path. Let go, then tap it." / "See the path. Now click it." Continue (tap elsewhere, no chain): "Tap the circled bud." Retry (chain under 3): "Only n. Start from the circled bud." Pass: "A chain of 3. Each bloom sings." Holding never fails the lesson: a tap without a hold still passes. A hold here sets `bloom.previewHintDone`, so the run's preview hint is skipped.
   4. Light the lantern (radius 2, the old "choose" board; the bud at (1,−1) is a lantern with 1 petal, so of the five glowing buds exactly (0,−1) and (−1,0) light it; no hint ring). Open: "Light the lantern." Continue (no bloom): "Tap a glowing bud. Reach the lantern." Retry (blooms, lantern dark): "Still dark. Which chain reaches the lantern?" Pass: "Lit! Three lanterns light a garden."
-  After lesson 4 the run starts directly, with no toast; the lantern posts say what to do.
+  After lesson 4 the first run starts directly, with no toast: its three lantern posts plant one by one, `feel.lanternBeatMs` apart, each with one pane pulse and the lantern bell, before the buds sprout. The posts say what to do.
 
 ## §4 Feel targets
 - Tap response under 100 ms: bud pop (`feel.tapPopMs`), a drop falling onto the bud (`feel.dropFallMs`), and a ripple ring where it lands.

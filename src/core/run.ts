@@ -2,7 +2,7 @@ import { Adapter } from './adapt';
 import { generateGarden, sproutArrows, sproutPetals } from './generator';
 import { makeBoard, type Board } from './hex';
 import { placeLanterns, starsFor } from './lanterns';
-import { Rng } from './rng';
+import { Rng, mixSeed } from './rng';
 import { chainPollen, chainRefund, resolveTap, type Bud, type TapResult } from './rules';
 import { bestSingleTap } from './solver';
 import type { Tuning } from '../tuning';
@@ -26,6 +26,13 @@ export interface TapOutcome {
   ended: boolean;
 }
 
+/** Everything needed to rebuild a garden: the evening's seed, its place in the evening, and the difficulty it was planted at. */
+export interface GardenKey {
+  seed: number;
+  k: number;
+  difficulty: number;
+}
+
 /**
  * One run (an evening): gardens in turn, a drop budget and the score. Each garden holds lanterns;
  * blooming them all lights the garden, scores stars by drops left, refills some drops and plants the
@@ -46,17 +53,30 @@ export class Run {
   /** Stars of each lit garden, in order. */
   stars: number[] = [];
   readonly adapter: Adapter;
+  readonly seed: number;
+  /** Index of the garden on the board (0 for the first of the evening). */
+  gardenIndex: number;
+  /** Key of the garden on the board, as planted: replaying it rebuilds the same buds and lanterns. */
+  key: GardenKey;
+  /** Each garden draws from its own rng, so a key alone reproduces it. */
   private rng: Rng;
 
-  constructor(private t: Tuning, readonly seed: number) {
-    this.rng = new Rng(seed);
+  /** A fresh evening; with `from`, one whose first garden is that key (seed comes from the key). */
+  constructor(private t: Tuning, seed: number, from?: GardenKey) {
+    this.seed = from ? from.seed : seed;
+    this.gardenIndex = from ? from.k : 0;
+    this.rng = new Rng(0);
+    this.key = { seed: this.seed, k: this.gardenIndex, difficulty: 0 };
     this.board = makeBoard(t.board.radius);
     this.adapter = new Adapter(t.adapt);
+    if (from) this.adapter.difficulty = from.difficulty;
     this.plant();
     this.drops = t.run.startDrops;
   }
 
   private plant(): void {
+    this.key = { seed: this.seed, k: this.gardenIndex, difficulty: this.adapter.difficulty };
+    this.rng = new Rng(mixSeed(this.seed, this.gardenIndex));
     this.buds = generateGarden(this.board, this.t.sprout, this.adapter.difficulty, this.rng);
     this.lanterns = placeLanterns(this.board, this.t.goal, this.rng);
     this.lit = this.lanterns.map(() => false);
@@ -99,6 +119,7 @@ export class Run {
       this.gardensLit++;
       this.stars.push(stars);
       this.drops += this.t.goal.refillOnLit;
+      this.gardenIndex++;
       this.plant();
       gardenLit = { stars, buds: this.buds, lanterns: this.lanterns };
     }
