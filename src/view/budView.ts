@@ -65,6 +65,8 @@ export class BudView extends Container {
   /** Name of a scale animation in progress on budC ('' when idle breathing owns it). */
   anim = '';
   hovered = false;
+  /** 0..1 ease toward the held-finger chevron size (preview.heldArrowScale); the garden drives it. */
+  heldArrow = 0;
   /** Base angle of each visible petal (for the idle lean). */
   petalAngles: number[] = [];
   arrows: number[] = [];

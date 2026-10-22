@@ -103,6 +103,7 @@ async function boot(): Promise<void> {
       seed: () => game.run?.seed,
       onGray: (on) => document.body.classList.toggle('gray', on),
       onNight: (n) => scene.setNight(n, 0),
+      lights: () => ({ count: garden.lightCount() + scene.lightCount(garden.centre()), cascade: game.busy }),
     });
   };
   if (new URLSearchParams(location.search).has('dev')) void togglePanel();

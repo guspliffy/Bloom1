@@ -36,15 +36,28 @@ export class Synth {
   private pad: { g: GainNode; oscs: OscillatorNode[] } | null = null;
   private voices: Voice[] = [];
 
-  /** Must run inside a user gesture (first tap) for iOS and Chrome autoplay rules. */
-  unlock(): void {
+  /** True once the context is running, so scheduled notes will sound. */
+  get running(): boolean {
+    return this.ctx?.state === 'running';
+  }
+
+  /**
+   * Must run inside a user gesture (first tap) for iOS and Chrome autoplay rules. Resolves when the
+   * context is running (at once if audio is unavailable or already running), so the first chain can
+   * wait for it before scheduling notes.
+   */
+  unlock(): Promise<void> {
     if (!this.ctx) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!Ctor) return;
+      if (!Ctor) return Promise.resolve();
       this.ctx = new Ctor();
       this.build(this.ctx);
     }
-    if (this.ctx.state !== 'running') void this.ctx.resume();
+    if (this.ctx.state === 'running') return Promise.resolve();
+    return this.ctx.resume().then(
+      () => undefined,
+      () => undefined,
+    );
   }
 
   private build(ctx: AudioContext): void {

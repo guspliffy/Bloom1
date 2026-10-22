@@ -13,7 +13,7 @@ import { hudMoteCount, REDUCED_MOTION, type GardenView, type PlayHooks } from '.
 import type { Scene } from './view/scene';
 import type { Tweener } from './view/tween';
 
-const TUTORIAL_KEY = 'bloom.tutorialDone.v2';
+const TUTORIAL_KEY = 'bloom.tutorialDone.v3';
 const BEST_KEY = 'bloom.best';
 const FIRST_RUN_KEY = 'bloom.firstRunDone';
 const PREVIEW_HINT_KEY = 'bloom.previewHintDone';
@@ -42,6 +42,11 @@ export class Game {
   private epoch = 0;
   private fixedSeed: number | null;
   private idleTimer = 0;
+  /** The first gesture's unlock; the session's first chain waits for it (at most 200 ms). */
+  private unlocking: Promise<void> = Promise.resolve();
+  private audioWaited = false;
+  /** The current lesson already showed its preview line (hold or hover happened). */
+  private lessonPreviewed = false;
 
   constructor(
     private garden: GardenView,
@@ -57,7 +62,17 @@ export class Game {
     garden.onTap = (cell) => void this.tap(cell);
     garden.onPreview = (cell) => {
       if (this.busy || this.hud.howtoOpen) return null;
-      if (this.inTutorial) return previewTap(this.lessons[this.lessonIdx].board, this.lessonBuds, cell, tuning.preview.depth);
+      if (this.inTutorial) {
+        const l = this.lessons[this.lessonIdx];
+        const line = this.lessonPreviewed ? null : (l.onPreview?.(cell) ?? null);
+        if (line) {
+          // Taught by doing: the hold itself retires the run's later "Hold a bud" toast.
+          this.lessonPreviewed = true;
+          store(PREVIEW_HINT_KEY, '1');
+          this.hud.coach(line, this.lessonIdx, this.lessons.length);
+        }
+        return previewTap(l.board, this.lessonBuds, cell, tuning.preview.depth);
+      }
       const run = this.run;
       if (!run || run.ended) return null;
       return previewTap(run.board, run.buds, cell, tuning.preview.depth);
@@ -86,7 +101,7 @@ export class Game {
 
   startTutorial(): void {
     this.resetScene();
-    this.lessons = tutorialLessons();
+    this.lessons = tutorialLessons(matchMedia('(pointer: fine)').matches);
     this.lessonIdx = 0;
     this.showLesson();
   }
@@ -99,6 +114,8 @@ export class Game {
     const l = this.lessons[this.lessonIdx];
     this.lessonBuds = l.start();
     this.garden.setGarden(l.board, this.lessonBuds);
+    this.garden.setLanterns(l.lanterns ?? [], (l.lanterns ?? []).map(() => false));
+    this.lessonPreviewed = false;
     this.garden.hintCells = l.hint;
     this.garden.highlightArrows = this.lessonIdx === 1;
     this.hud.setStatsVisible(false);
@@ -124,7 +141,6 @@ export class Game {
     this.hud.setPollen(0);
     this.relayout();
     this.garden.sproutIn();
-    this.hud.toast('Bloom the buds with lanterns.', 3400);
     this.armIdleHint();
   }
 
@@ -145,6 +161,16 @@ export class Game {
     const start = tuning.run.startDrops;
     this.scene.setNight(Math.max(0, Math.min(1, (start - drops) / start)));
     this.scene.fireflyBoost = drops <= 2 ? 1.2 : 1;
+  }
+
+  /**
+   * The very first chain of a session waits for the audio context to be running (at most 200 ms) so
+   * no note is scheduled into a suspended context and lost, notably on iOS.
+   */
+  private async awaitAudio(): Promise<void> {
+    if (this.audioWaited || this.synth.running) return;
+    this.audioWaited = true;
+    await Promise.race([this.unlocking, this.tw.wait(200)]);
   }
 
   /** Put the cascade on the note grid and schedule every note, chord and pad ahead of time. */
@@ -191,7 +217,7 @@ export class Game {
   }
 
   private async tap(cell: number): Promise<void> {
-    this.synth.unlock();
+    this.unlocking = this.synth.unlock();
     this.hud.hideTitle();
     if (this.busy || this.hud.howtoOpen) return;
     if (this.inTutorial) return this.lessonTap(cell);
@@ -229,6 +255,8 @@ export class Game {
       if (arrived >= motes) motesDone();
     };
 
+    await this.awaitAudio();
+    if (epoch !== this.epoch) return;
     await this.garden.playChain(out.result, this.schedule(out.result), this.hooks(onMote, true, lanterns));
     if (epoch !== this.epoch) return;
     this.hud.endChain();
@@ -307,7 +335,9 @@ export class Game {
     if (epoch !== this.epoch) return;
     this.garden.addTappedPetal(cell);
     if (result.bloomed.length === 0) this.synth.drop();
-    await this.garden.playChain(result, this.schedule(result), this.hooks(() => {}, false));
+    await this.awaitAudio();
+    if (epoch !== this.epoch) return;
+    await this.garden.playChain(result, this.schedule(result), this.hooks(() => {}, false, l.lanterns ?? []));
     if (epoch !== this.epoch) return;
     this.hud.endChain();
     this.lessonBuds = this.lessonBuds.map((b, i) => ({ petals: result.petals[i], arrows: b.arrows }));

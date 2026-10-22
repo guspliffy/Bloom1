@@ -59,6 +59,13 @@ export class GardenView extends Container {
   private flare = 0;
   private chainLight = new Sprite(glowTexture());
   private chainTarget = { x: 0, y: 0, size: 0, alpha: 0 };
+  /** Open-flower halos in bloom order: only the latest `light.haloHoldCount` stay bright (GDD §6 light budget). */
+  private halos: { halo: Sprite; open: number; sink: number }[] = [];
+  /** A chain is playing: ready halos and the hint ring are off so the frontier is the one bright thing. */
+  private chainPlaying = false;
+  /** Garden-lit moment: flower halos and the chain light are off until the next garden sprouts. */
+  private litDim = false;
+  private haloMul = 1;
   private dimmed = new Set<number>();
   private zoomTarget = 1;
   private zoom = 1;
@@ -213,6 +220,10 @@ export class GardenView extends Container {
     for (const m of this.marks.removeChildren()) m.destroy();
     this.setLanterns([], []);
     this.dimmed.clear();
+    this.halos = [];
+    this.litDim = false;
+    this.haloMul = 1;
+    this.chainPlaying = false;
     this.restDim = false;
     this.preview = null;
     this.previewSet.clear();
@@ -248,6 +259,32 @@ export class GardenView extends Container {
       const b = this.buds[l.cell];
       if (b) l.layout(b.x, b.y, this.s, this.rot);
     }
+  }
+
+  /**
+   * Garden lit (GDD §6 light budget): flower halos and the chain light fade to 0 over 300 ms so the
+   * lanterns take the stage. Resolves when they are dark; the next sprout or garden turns them back on.
+   */
+  async dimForGardenLit(): Promise<void> {
+    this.litDim = true;
+    this.chainTarget = { ...this.chainTarget, alpha: 0 };
+    await this.tw.wait(300);
+  }
+
+  /**
+   * Visible additive lights in the bed (alpha over 0.1): ready and flower halos, hint rings, the chain
+   * light, lit lanterns, pollen, trails and ripples. Feeds the dev panel's "lights" readout.
+   */
+  lightCount(): number {
+    const lit = (s: Sprite | Graphics) => s.visible && s.alpha > 0.1 && s.blendMode === 'add';
+    let n = 0;
+    for (const b of this.buds) {
+      if (lit(b.halo)) n++;
+      if (lit(b.hintRing)) n++;
+    }
+    for (const layer of [this.light, this.fx, this.marks]) for (const c of layer.children) if (lit(c as Sprite)) n++;
+    for (const l of this.lanterns.values()) if (l.lit) n++;
+    return n;
   }
 
   /** Every lantern flares together when the garden is lit. */
@@ -317,10 +354,15 @@ export class GardenView extends Container {
     const t = this.time;
     const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 * f.readyPulseHz);
     const k = Math.min(1, dtMs / 120);
+    // Light budget: with many ready buds every ready halo dims by fullCount/n, never below the floor.
+    const L = tuning.light;
+    let readyCount = 0;
+    for (const b of this.buds) if (b.ready && b.anim !== 'grow') readyCount++;
+    const haloScale = readyCount > L.readyHaloFullCount ? Math.max(L.readyHaloFloor, L.readyHaloFullCount / readyCount) : 1;
     for (let i = 0; i < this.buds.length; i++) {
       const v = this.buds[i];
       const ready = v.ready && v.anim !== 'grow';
-      v.halo.alpha += ((ready ? 0.22 + 0.22 * pulse : 0) - v.halo.alpha) * k;
+      v.halo.alpha += ((ready && !this.chainPlaying ? (0.22 + 0.22 * pulse) * haloScale : 0) - v.halo.alpha) * k;
       if (!v.isOpen) {
         const idle = 1 + f.idleBreathe * Math.sin((t * Math.PI * 2) / v.period + v.phase);
         const breathe = ready ? 1 + f.readyBreathe * pulse : idle;
@@ -332,7 +374,7 @@ export class GardenView extends Container {
       const dimTo = this.restDim ? 0.6 : this.dimmed.has(i) ? f.cascadeDimAlpha : previewDim ? tuning.preview.dimAlpha : 1;
       v.alpha += (dimTo - v.alpha) * Math.min(1, dtMs / 250);
 
-      const hinted = !v.isOpen && this.hintCells.includes(i);
+      const hinted = !v.isOpen && !this.chainPlaying && this.hintCells.includes(i);
       const hp = 0.5 + 0.5 * Math.sin(t * Math.PI * 2);
       v.hintRing.alpha += ((hinted ? 0.4 + 0.5 * hp : 0) - v.hintRing.alpha) * k;
       v.hintDrop.alpha += ((hinted ? 0.85 : 0) - v.hintDrop.alpha) * k;
@@ -345,17 +387,34 @@ export class GardenView extends Container {
 
       if (v.ghost.visible) v.ghost.alpha = 0.3 + 0.25 * pulse;
       // Chevrons: warm on ready buds and on the previewed bud, otherwise hidden.
-      const hover = !ready && !v.isOpen && this.preview?.cell === i;
-      const target = ready ? 0.9 : hover ? 0.85 : 0;
+      const previewed = !v.isOpen && this.preview?.cell === i;
+      const hover = !ready && previewed;
+      // Under a finger the chevrons reach out from beneath it: full alpha and heldArrowScale (touch only).
+      const held = previewed && !!this.press?.touch && this.press.held;
+      v.heldArrow += ((held ? 1 : 0) - v.heldArrow) * Math.min(1, dtMs / Math.max(1, f.arrowRevealMs));
+      const target = held ? 1 : ready ? 0.9 : hover ? 0.85 : 0;
       const rate = target > v.arrowsG.alpha ? (ready ? 180 : f.arrowRevealMs) : 200;
       const step = (dtMs / Math.max(1, rate)) * Math.max(target, 0.4);
       v.arrowsG.alpha = target > v.arrowsG.alpha ? Math.min(target, v.arrowsG.alpha + step) : Math.max(target, v.arrowsG.alpha - step);
       if (ready) v.arrowsG.tint = palette.petalReady;
       else if (hover) v.arrowsG.tint = palette.arrow;
-      v.arrowsG.scale.set(hinted && this.highlightArrows ? 1 + 0.12 * pulse : ready ? 1 + f.readyBreathe * pulse : 1);
+      const baseScale = hinted && this.highlightArrows ? 1 + 0.12 * pulse : ready ? 1 + f.readyBreathe * pulse : 1;
+      v.arrowsG.scale.set(baseScale * (1 + (tuning.preview.heldArrowScale - 1) * v.heldArrow));
     }
 
     for (const l of this.lanterns.values()) l.tick(t, this.flare);
+
+    // Open-flower halos: the latest few hold their glow, older ones sink to a faint rest over 600 ms.
+    this.haloMul += ((this.litDim ? 0 : 1) - this.haloMul) * Math.min(1, dtMs / 100);
+    this.halos = this.halos.filter((h) => !h.halo.destroyed);
+    const holdFrom = this.halos.length - L.haloHoldCount;
+    this.halos.forEach((h, j) => {
+      const target = j < holdFrom ? 1 : 0;
+      const step = dtMs / 600;
+      h.sink = target > h.sink ? Math.min(target, h.sink + step) : Math.max(target, h.sink - step);
+      h.halo.alpha = (h.open + (L.haloRestAlpha - h.open) * h.sink) * this.haloMul;
+      h.halo.visible = h.halo.alpha > 0.005;
+    });
 
     const ct = this.chainTarget;
     const ck = Math.min(1, dtMs / 300);
@@ -363,7 +422,7 @@ export class GardenView extends Container {
     this.chainLight.y += (ct.y - this.chainLight.y) * ck;
     const size = this.chainLight.width + (ct.size - this.chainLight.width) * ck;
     this.chainLight.width = this.chainLight.height = Math.max(1, size);
-    this.chainLight.alpha += (ct.alpha - this.chainLight.alpha) * Math.min(1, dtMs / (ct.alpha > this.chainLight.alpha ? 300 : 900));
+    this.chainLight.alpha += (ct.alpha - this.chainLight.alpha) * Math.min(1, dtMs / (ct.alpha > this.chainLight.alpha ? 300 : this.litDim ? 100 : 900));
     this.chainLight.visible = this.chainLight.alpha > 0.005;
 
     this.zoom += (this.zoomTarget - this.zoom) * Math.min(1, dtMs / (tuning.feel.cascadeZoomMs / 3));
@@ -424,6 +483,7 @@ export class GardenView extends Container {
   async playChain(result: TapResult, sched: ChainSchedule, hooks: PlayHooks): Promise<void> {
     const f = tuning.feel;
     if (result.steps.length === 0) return;
+    this.chainPlaying = true;
     const inChain = new Set([result.tapped, ...result.bloomed]);
     this.dimmed = new Set(this.buds.map((_, i) => i).filter((i) => !inChain.has(i)));
     if (!REDUCED_MOTION) this.zoomTarget = 1 + f.cascadeZoom;
@@ -445,7 +505,7 @@ export class GardenView extends Container {
           this.chainTarget = {
             x: cx / n,
             y: cy / n,
-            size: Math.min(14, 2 + f.chainLightSizePerBloom * n) * this.s,
+            size: Math.min(f.chainLightMaxSize, 2 + f.chainLightSizePerBloom * n) * this.s,
             alpha: Math.min(f.chainLightMaxAlpha, f.chainLightAlphaPerBloom * n),
           };
           const g = this.buds[cue.cell].getGlobalPosition();
@@ -456,7 +516,7 @@ export class GardenView extends Container {
     // Held breath: the light swells while the last petals hang in the air.
     if (sched.holdWave > 0) {
       void this.tw.wait(sched.waveAt[sched.holdWave - 1] + sched.sixteenthMs).then(() => {
-        this.chainTarget = { ...this.chainTarget, size: this.chainTarget.size * 1.2, alpha: Math.min(0.45, this.chainTarget.alpha * 1.2) };
+        this.chainTarget = { ...this.chainTarget, size: this.chainTarget.size * 1.2, alpha: Math.min(f.chainLightMaxAlpha * 1.2, this.chainTarget.alpha * 1.2) };
       });
     }
 
@@ -483,6 +543,7 @@ export class GardenView extends Container {
   /** The cascade is over: light fades, the board breathes back out, dimmed buds return. */
   settle(): void {
     this.dimmed.clear();
+    this.chainPlaying = false;
     this.zoomTarget = 1;
     this.chainTarget = { ...this.chainTarget, alpha: 0 };
   }
@@ -531,8 +592,11 @@ export class GardenView extends Container {
       v.bloomHalo?.destroy();
       v.bloomHalo = halo;
       const [a0, a1] = f.haloOpenAlpha;
+      halo.alpha = a0 * this.haloMul;
+      const entry = { halo, open: a0, sink: 0 };
+      this.halos.push(entry);
       void this.tw.to(f.haloOpenMs, (t) => {
-        if (!halo.destroyed) halo.alpha = a0 + (a1 - a0) * t;
+        entry.open = a0 + (a1 - a0) * t;
       });
 
       this.motes(v.x, v.y, color, hooks, cue.k);
@@ -560,7 +624,8 @@ export class GardenView extends Container {
   /** Pollen motes rise and scatter; a few fly to the HUD counter. */
   private motes(x: number, y: number, color: number, hooks: PlayHooks, k: number): void {
     const f = tuning.feel;
-    const n = this.spawnOk(f.pollenMotesPerBloom);
+    // Light budget: from the 8th bloom of a chain only half the motes scatter.
+    const n = this.spawnOk(k >= 7 ? Math.ceil(f.pollenMotesPerBloom / 2) : f.pollenMotesPerBloom);
     for (let i = 0; i < n; i++) {
       const d = this.glowDot(i % 3 === 0 ? color : palette.pollen, 6 + Math.random() * 6);
       const a = Math.random() * Math.PI * 2;
@@ -614,7 +679,7 @@ export class GardenView extends Container {
     const ang = dirAngle(dir) + this.rot;
     const at = this.flightPath(from, dir, to);
 
-    const trail = [0, 1, 2, 3, 4].map((i) => this.glowDot(color, this.s * (0.26 - i * 0.04)));
+    const trail = Array.from({ length: tuning.feel.trailDots }, (_, i) => this.glowDot(color, this.s * (0.26 - i * 0.04)));
     const petal = petalSprite();
     petal.tint = color;
     shapePetal(petal, this.s * 0.46, this.s * 0.17, 0, 0);
@@ -715,11 +780,14 @@ export class GardenView extends Container {
   /** Bloomed cells close their flowers and fresh buds grow in their place. */
   async sprout(sprouts: readonly Sprout[]): Promise<void> {
     const f = tuning.feel;
+    this.litDim = false;
     const jobs = sprouts.map(({ cell, bud }, j) => {
       const v = this.buds[cell];
       const delay = j * 35;
       const halo = v.bloomHalo;
       v.bloomHalo = null;
+      // The sprout's own fade takes over this halo from here.
+      this.halos = this.halos.filter((h) => h.halo !== halo);
       const h0 = halo?.alpha ?? 0;
       const fs = v.flower.scale.x;
       const fade = this.tw.to(320, (t) => {

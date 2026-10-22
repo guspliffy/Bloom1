@@ -39,8 +39,8 @@ export const palette = {
   lanternIron: 0x2a2026,
   ink: 0xf4eefc,
   leafReady: 0x3f6a4c,
-  /** Open-flower hues walk along a chain, one per bloom. */
-  bloom: [0xff8fb8, 0xffa47a, 0xffd36e, 0xb5ec8a, 0x82e0e6, 0x9fb2ff, 0xd59cff],
+  /** Open-flower hues walk along a chain, one per bloom (GDD §6: rose, coral, lilac, mint, seafoam, lavender). No gold (light only) and no blue (water only). */
+  bloom: [0xff8fb8, 0xffa08a, 0xd59cff, 0xb5ec8a, 0x8fe6c8, 0xb9a6ff],
   cascadeLight: 0xffd8a0,
   pollen: 0xffd36e,
   firefly: 0xffe7a3,

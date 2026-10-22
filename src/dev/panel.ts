@@ -12,6 +12,8 @@ export function createPanel(opts: {
   seed: () => number | undefined;
   onGray: (on: boolean) => void;
   onNight: (n: number) => void;
+  /** Visible additive light sprites now (alpha over 0.1, inside the bed) and whether a chain is playing. */
+  lights?: () => { count: number; cascade: boolean };
 }): Pane {
   const pane = new Pane({ title: 'Bloom tuning', expanded: true });
   // Look checks: grayscale (ready buds must still stand out by value and shape) and the night factor.
@@ -19,6 +21,21 @@ export function createPanel(opts: {
   const lookF = pane.addFolder({ title: 'look checks' });
   lookF.addBinding(look, 'grayscale').on('change', (e) => opts.onGray(e.value));
   lookF.addBinding(look, 'night', { min: 0, max: 1.15, step: 0.01 }).on('change', (e) => opts.onNight(e.value));
+  // Light budget (GDD §6): at rest at most 10 lights, 24 during a cascade, 12 when the garden is lit.
+  if (opts.lights) {
+    const lights = opts.lights;
+    // Getters: a monitor binding re-reads the property on its interval.
+    const readout = {
+      get lights() {
+        const { count, cascade } = lights();
+        return `${count} / ${cascade ? 24 : 10}`;
+      },
+      targets: 'rest 10, cascade 24, lit 12',
+    };
+    const lightsF = pane.addFolder({ title: 'lights' });
+    lightsF.addBinding(readout, 'lights', { readonly: true, interval: 200 });
+    lightsF.addBinding(readout, 'targets', { readonly: true });
+  }
   const bindAll = (folder: FolderApi, obj: Record<string, unknown>) => {
     for (const [key, value] of Object.entries(obj)) {
       if (typeof value === 'number') folder.addBinding(obj, key, { step: Number.isInteger(value) ? 1 : 0.01 });

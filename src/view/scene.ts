@@ -183,7 +183,29 @@ export class Scene {
   /** A few fireflies drift toward a fresh bloom (screen coords). */
   attract(x: number, y: number): void {
     const near = [...this.flies].sort((a, b) => Math.hypot(a.s.x - x, a.s.y - y) - Math.hypot(b.s.x - x, b.s.y - y)).slice(0, 3);
-    for (const f of near) f.pull = { x, y, until: this.t + tuning.scene.fireflyAttractMs / 1000 };
+    // Light budget: only so many fireflies are drawn to blooms at once, however long the chain.
+    let pulled = this.flies.filter((f) => f.pull && this.t < f.pull.until).length;
+    for (const f of near) {
+      const active = !!f.pull && this.t < f.pull.until;
+      if (!active) {
+        if (pulled >= tuning.scene.fireflyPullMax) continue;
+        pulled++;
+      }
+      f.pull = { x, y, until: this.t + tuning.scene.fireflyAttractMs / 1000 };
+    }
+  }
+
+  /**
+   * Additive scene lights for the dev panel's "lights" readout (GDD §6 light budget): the moon and horizon
+   * glow, plus fireflies bright enough to see (alpha over 0.1) inside the bed circle.
+   */
+  lightCount(bed: { x: number; y: number; r: number } | null): number {
+    let n = (this.moon.alpha > 0.1 ? 1 : 0) + (this.horizonGlow.alpha > 0.1 ? 1 : 0);
+    for (const f of this.flies) {
+      if (f.s.alpha <= 0.1) continue;
+      if (!bed || Math.hypot(f.s.x - bed.x, f.s.y - bed.y) <= bed.r) n++;
+    }
+    return n;
   }
 
   tick(dtMs: number): void {

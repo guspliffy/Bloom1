@@ -145,18 +145,50 @@ describe('tutorial', () => {
   it('lesson 3 chains three from the left bud and asks for a retry otherwise', () => {
     expect(play(2, -1, 0).res.bloomed.length).toBe(3);
     expect(play(2, -1, 0).fb.outcome).toBe('pass');
-    expect(play(2, 0, 0).fb.outcome).toBe('retry');
+    expect(play(2, -1, 0).fb.say).toBe('A chain of 3. Each bloom sings.');
+    const bad = play(2, 0, 0);
+    expect(bad.fb.outcome).toBe('retry');
+    expect(bad.fb.say).toMatch(/^Only \d\. Start from the circled bud\.$/);
+    expect(play(2, 0, -1).fb).toEqual({ outcome: 'continue', say: 'Tap the circled bud.' });
   });
 
-  it('lesson 4: the bud pointing into full buds wins, the other blooms alone', () => {
-    const good = play(3, -1, 0);
-    expect(good.res.bloomed.length).toBeGreaterThanOrEqual(4);
-    expect(good.fb.outcome).toBe('pass');
-    const bad = play(3, 0, 2);
-    expect(bad.res.bloomed.length).toBe(1);
-    expect(bad.fb.outcome).toBe('retry');
+  it('lesson 3 teaches the preview by doing: hold or hover the circled bud, and a tap without it still passes', () => {
+    const touch = tutorialLessons(false)[2];
+    const mouse = tutorialLessons(true)[2];
+    expect(touch.say).toBe('Hold the circled bud.');
+    expect(mouse.say).toBe('Hover the circled bud.');
+    const circled = touch.hint[0];
+    expect(touch.onPreview?.(circled)).toBe('See the path. Let go, then tap it.');
+    expect(mouse.onPreview?.(circled)).toBe('See the path. Now click it.');
+    expect(touch.onPreview?.(cellIndex(touch.board, 0, 0))).toBeNull();
+    // No hold happened in this test, yet the tap passes.
+    const res = resolveTap(touch.board, touch.start(), circled);
+    expect(touch.judge(res, touch.start()).outcome).toBe('pass');
+    for (const i of [0, 1, 3]) expect(tutorialLessons()[i].onPreview).toBeUndefined();
+  });
+
+  it('lesson 4 is the lantern lesson: exactly the two chains that reach the lantern light it', () => {
     const l = tutorialLessons()[3];
-    expect(l.start().filter((b) => b.petals === 3).length).toBe(5);
+    const lantern = cellIndex(l.board, 1, -1);
+    expect(l.say).toBe('Light the lantern.');
+    expect(l.lanterns).toEqual([lantern]);
+    expect(l.hint).toEqual([]);
+    const buds = l.start();
+    expect(buds[lantern].petals).toBe(1);
+    const glowing = buds.map((b, i) => (b.petals === 3 ? i : -1)).filter((i) => i >= 0);
+    expect(glowing.length).toBe(5);
+    const lights = glowing.filter((c) => resolveTap(l.board, buds, c).bloomed.includes(lantern));
+    expect(lights.sort()).toEqual([cellIndex(l.board, 0, -1), cellIndex(l.board, -1, 0)].sort());
+    for (const c of lights) {
+      const fb = l.judge(resolveTap(l.board, buds, c), buds);
+      expect(fb).toEqual({ outcome: 'pass', say: 'Lit! Three lanterns light a garden.' });
+    }
+    for (const c of glowing.filter((g) => !lights.includes(g))) {
+      const fb = l.judge(resolveTap(l.board, buds, c), buds);
+      expect(fb).toEqual({ outcome: 'retry', say: 'Still dark. Which chain reaches the lantern?' });
+    }
+    const quiet = cellIndex(l.board, 0, 1);
+    expect(l.judge(resolveTap(l.board, buds, quiet), buds)).toEqual({ outcome: 'continue', say: 'Tap a glowing bud. Reach the lantern.' });
   });
 });
 

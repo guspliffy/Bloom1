@@ -19,6 +19,10 @@ export interface Lesson {
   hint: number[];
   /** Coach line shown when the lesson opens. */
   say: string;
+  /** Lantern cells (all dark at the start); the lesson passes when one lights. */
+  lanterns?: number[];
+  /** The preview of `cell` is showing (hold or hover): a new coach line, or null to say nothing. Never fails a lesson. */
+  onPreview?: (cell: number) => string | null;
   /** Judge one tap. `buds` is the garden before the tap. */
   judge: (result: TapResult, buds: readonly Bud[]) => LessonFeedback;
 }
@@ -27,9 +31,10 @@ const fill = (board: Board, petals: number, arrows: number[]): Bud[] => board.q.
 
 /**
  * Four tiny hand-made gardens that teach by doing: a bud fills to 4 and blooms, a bloom follows its
- * arrows, a full neighbor blooms too, and finding the tap whose arrows feed other full buds.
+ * arrows, a full neighbor blooms too (and a hold previews the path), and finding the tap whose
+ * chain reaches the lantern. `fine` is a mouse pointer: hover instead of hold.
  */
-export function tutorialLessons(): Lesson[] {
+export function tutorialLessons(fine = false): Lesson[] {
   const small = makeBoard(1);
   const at1 = (q: number, r: number) => cellIndex(small, q, r);
   const center = at1(0, 0);
@@ -81,7 +86,8 @@ export function tutorialLessons(): Lesson[] {
       return b;
     },
     hint: [left],
-    say: 'Tap the circled bud. Watch the chain.',
+    say: fine ? 'Hover the circled bud.' : 'Hold the circled bud.',
+    onPreview: (cell) => (cell === left ? (fine ? 'See the path. Now click it.' : 'See the path. Let go, then tap it.') : null),
     judge: (r) => {
       if (r.bloomed.length >= 3) return { outcome: 'pass', say: `A chain of ${r.bloomed.length}. Each bloom sings.` };
       if (r.bloomed.length > 0) return { outcome: 'retry', say: `Only ${r.bloomed.length}. Start from the circled bud.` };
@@ -91,34 +97,34 @@ export function tutorialLessons(): Lesson[] {
 
   const mid = makeBoard(2);
   const at2 = (q: number, r: number) => cellIndex(mid, q, r);
-  const good = at2(-1, 0);
-  const bad = at2(0, 2);
-  const chooseLesson: Lesson = {
+  const lantern = at2(1, -1);
+  const lanternLesson: Lesson = {
     board: mid,
     start: () => {
       const rng = new Rng(2024);
       const b = generateGarden(mid, { petalWeightsGentle: [0.3, 0.45, 0.25, 0], petalWeightsWild: [0.3, 0.45, 0.25, 0], alignGentle: 0, alignWild: 0 }, 0, rng);
-      b[good] = { petals: 3, arrows: [0, 1, 5] };
+      b[at2(-1, 0)] = { petals: 3, arrows: [0, 1, 5] };
       b[at2(0, 0)] = { petals: 3, arrows: [0, 1, 5] };
       b[at2(0, -1)] = { petals: 3, arrows: [0, 1, 5] };
       b[at2(1, 0)] = { petals: 3, arrows: [0, 1, 2] };
-      b[at2(1, -1)] = { petals: 2, arrows: [0, 2, 3] };
-      b[bad] = { petals: 3, arrows: [1, 2, 3] };
+      // The lantern bud: one petal, so only a chain that feeds it three times lights it.
+      b[lantern] = { petals: 1, arrows: [0, 2, 3] };
+      b[at2(0, 2)] = { petals: 3, arrows: [1, 2, 3] };
       b[at2(0, 1)].petals = 1;
       b[at2(1, 1)].petals = 0;
       b[at2(-1, 2)].petals = 1;
       return b;
     },
     hint: [],
-    say: 'Find a tap that blooms 4 or more.',
+    lanterns: [lantern],
+    say: 'Light the lantern.',
     judge: (r) => {
-      const n = r.bloomed.length;
-      if (n >= 4) return { outcome: 'pass', say: `${n} blooms! That is the whole game.` };
-      if (n > 0) return { outcome: 'retry', say: `Only ${n}. Whose arrows hit glowing buds?` };
-      return { outcome: 'continue', say: 'Tap a glowing bud.' };
+      if (r.bloomed.includes(lantern)) return { outcome: 'pass', say: 'Lit! Three lanterns light a garden.' };
+      if (r.bloomed.length > 0) return { outcome: 'retry', say: 'Still dark. Which chain reaches the lantern?' };
+      return { outcome: 'continue', say: 'Tap a glowing bud. Reach the lantern.' };
     },
   };
 
-  return [fillLesson, arrowLesson, chainLesson, chooseLesson];
+  return [fillLesson, arrowLesson, chainLesson, lanternLesson];
 }
 
