@@ -12,7 +12,7 @@ import { bestSingleTap } from '../src/core/solver';
 import { chainStop } from '../src/core/stop';
 import { hexDistance, placeLanterns, ringOf, starsFor } from '../src/core/lanterns';
 import { nudgeCell } from '../src/core/nudge';
-import { MAX_STAR_GROUPS, summaryView } from '../src/hud';
+import { MAX_STAR_GROUPS, chainSpot, gearSpot, previewHint, summaryView, titlePlacement } from '../src/hud';
 
 const t = structuredClone(defaults);
 
@@ -465,5 +465,41 @@ describe('end sheet', () => {
     expect(v.groups.length).toBe(MAX_STAR_GROUPS);
     expect(v.more).toBe(2);
     expect(v.best).toBe('Best ★ 17');
+  });
+});
+
+describe('layout helpers', () => {
+  it('puts the title 1.2s above the bed, never within 60 px of the top, and shrinks it on a tight bed', () => {
+    const roomy = titlePlacement(400, 30);
+    expect(roomy.size).toBe(52);
+    expect(roomy.top + roomy.size * 1.1).toBeCloseTo(400 - 36, 5);
+    const tight = titlePlacement(90, 40);
+    expect(tight.size).toBe(40);
+    expect(tight.top).toBe(60);
+    expect(titlePlacement(120, 40).top).toBeGreaterThanOrEqual(60);
+  });
+  it('lifts the chain count 1.4s above the latest bloom and keeps it 12 px inside the viewport', () => {
+    const bed = { x: 200, top: 300 };
+    const size = { w: 40, h: 44 };
+    expect(chainSpot({ x: 150, y: 500 }, bed, 30, size, 400)).toEqual({ x: 150, y: 500 - 42 });
+    expect(chainSpot({ x: 2, y: 500 }, bed, 30, size, 400).x).toBe(12 + 20);
+    expect(chainSpot({ x: 399, y: 500 }, bed, 30, size, 400).x).toBe(400 - 12 - 20);
+    expect(chainSpot({ x: 150, y: 20 }, bed, 30, size, 400).y).toBe(12 + 44);
+  });
+  it('with reduced motion pins the count above the bed, at the coach spot', () => {
+    const p = chainSpot(null, { x: 200, top: 300 }, 30, { w: 40, h: 44 }, 400);
+    expect(p.x).toBe(200);
+    expect(p.y - 44).toBe(300 - 64);
+  });
+  it('rides the lower-right edge of the turned planter and stays on screen', () => {
+    const g = gearSpot({ x: 200, y: 400 }, 190, 27, 390);
+    expect(g.x).toBeGreaterThan(200);
+    expect(g.y).toBeGreaterThan(400);
+    expect(g.y).toBeLessThan(400 + 190);
+    expect(gearSpot({ x: 380, y: 400 }, 190, 27, 390).x).toBeLessThanOrEqual(390 - 12 - 22);
+  });
+  it('words the preview hint by pointer', () => {
+    expect(previewHint(false)).toBe('Hold a bud to see its path.');
+    expect(previewHint(true)).toBe('Hover a bud to see its path.');
   });
 });

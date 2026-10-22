@@ -7,7 +7,7 @@ import { nudgeCell } from './core/nudge';
 import { chainStop } from './core/stop';
 import { tutorialLessons, type Lesson } from './core/tutorial';
 import { lerpColor, palette } from './view/palette';
-import type { Hud } from './hud';
+import { previewHint, type Hud } from './hud';
 import { tuning } from './tuning';
 import { hudMoteCount, REDUCED_MOTION, type GardenView, type PlayHooks } from './view/garden';
 import type { Scene } from './view/scene';
@@ -69,7 +69,7 @@ export class Game {
     });
     garden.onTap = (cell) => void this.tap(cell);
     garden.onPreview = (cell) => {
-      if (this.busy || this.hud.howtoOpen) return null;
+      if (this.busy || this.hud.sheetOpen) return null;
       if (this.inTutorial) {
         const l = this.lessons[this.lessonIdx];
         const line = this.lessonPreviewed ? null : (l.onPreview?.(cell) ?? null);
@@ -89,9 +89,10 @@ export class Game {
   }
 
   start(): void {
+    // The title is up before lesson 1's coach line, which fades in after it.
+    this.hud.showTitle();
     if (this.wantTutorial) this.startTutorial();
     else this.newRun();
-    this.hud.showTitle();
   }
 
   private resetScene(): void {
@@ -100,9 +101,9 @@ export class Game {
     this.tw.clear();
     this.synth.padOff();
     this.hud.hideSummary();
-    this.hud.hideHowto();
+    this.hud.closeSheets();
     this.hud.hideGardenLit();
-    this.hud.endChain();
+    this.hud.hideChain();
     this.scene.gather = null;
     this.scene.clearLift();
     this.scene.fireflyBoost = 1;
@@ -222,7 +223,7 @@ export class Game {
       onLantern: () => this.synth.lantern(),
       onBloom: (cue, x, y) => {
         const hue = lerpColor(palette.bloom[cue.k % palette.bloom.length], 0xffe9c4, 0.5);
-        this.hud.setChain(cue.k + 1, `#${hue.toString(16).padStart(6, '0')}`);
+        this.hud.setChain(cue.k + 1, `#${hue.toString(16).padStart(6, '0')}`, REDUCED_MOTION ? undefined : { x, y });
         this.scene.attract(x, y);
       },
       pollenTarget: () => this.hud.pollenAnchor(),
@@ -234,7 +235,7 @@ export class Game {
   private async tap(cell: number): Promise<void> {
     this.unlocking = this.synth.unlock();
     this.hud.hideTitle();
-    if (this.busy || this.hud.howtoOpen) return;
+    if (this.busy || this.hud.sheetOpen) return;
     if (this.inTutorial) return this.lessonTap(cell);
     const run = this.run;
     if (!run || run.ended) return;
@@ -360,7 +361,7 @@ export class Game {
     };
     if (result.bloomed.length >= tuning.hud.scoreHintChain && once(SCORE_HINT_KEY, 'Longer chains are worth much more.')) return;
     const fine = matchMedia('(pointer: fine)').matches;
-    if (once(PREVIEW_HINT_KEY, fine ? 'Hover a bud to see where its petals go.' : 'Hold a bud to see where its petals go.')) return;
+    if (once(PREVIEW_HINT_KEY, previewHint(fine))) return;
     const kinds = new Set(chainStop(result).map((m) => m.kind));
     if (kinds.has('edge') && once(EDGE_HINT_KEY, 'Petals off the edge are lost.', 3400)) return;
     if (kinds.has('open')) once(OPEN_HINT_KEY, 'Open flowers catch no petals.', 3400);

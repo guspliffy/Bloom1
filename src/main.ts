@@ -3,14 +3,19 @@ import { Application, Container } from 'pixi.js';
 import { Synth } from './audio/synth';
 import { bestSingleTap } from './core/solver';
 import { Game } from './game';
-import { Hud } from './hud';
+import { gearSpot, Hud } from './hud';
 import './style.css';
-import { GardenView } from './view/garden';
+import { tuning } from './tuning';
+import { GardenView, REDUCED_MOTION } from './view/garden';
 import { Scene } from './view/scene';
 import { Tweener } from './view/tween';
 
 const TOP_HUD = 84;
 const BOTTOM_HUD = 70;
+/** Board while a sheet is open (GDD §7): dimmed and shrunk over 300 ms. */
+const SHEET_ALPHA = 0.4;
+const SHEET_SCALE = 0.94;
+const DIM_MS = 300;
 
 async function boot(): Promise<void> {
   const app = new Application();
@@ -27,17 +32,46 @@ async function boot(): Promise<void> {
   const scene = new Scene();
   const overlay = new Container();
   const garden = new GardenView(tw, overlay);
-  app.stage.addChild(scene.back, garden, scene.front, overlay);
+  // Sheets dim and shrink the board and its light overlay as one, so each rides in a wrapper.
+  const boardLayer = new Container();
+  const overlayLayer = new Container();
+  boardLayer.addChild(garden);
+  overlayLayer.addChild(overlay);
+  app.stage.addChild(scene.back, boardLayer, scene.front, overlayLayer);
 
   const hud = new Hud();
+  let sheetOpen = false;
+  let dim = 0;
+  let appliedDim = 0;
+  hud.onSheet = (open) => (sheetOpen = open);
   const synth = new Synth();
 
   const relayout = () => {
     const w = app.screen.width;
     const h = app.screen.height;
     if (garden.board) {
-      garden.layout(12, TOP_HUD, w - 24, h - TOP_HUD - BOTTOM_HUD);
-      hud.setBedTop(garden.bedTop().y);
+      // Portrait: the bed's bottom edge sits at `scene.bedBottomPortrait` of the height, so a board
+      // that is narrower than its box slides down to it. Landscape: between the top bar and bottom bar.
+      const portraitScreen = h > w;
+      const bottom = portraitScreen ? h * tuning.scene.bedBottomPortrait : h - BOTTOM_HUD;
+      const bw = w - 24;
+      const bh = bottom - TOP_HUD;
+      garden.layout(12, TOP_HUD, bw, bh);
+      const turned = bh > bw * 1.1;
+      const rb = () => garden.centre().r + garden.s;
+      const bedBottom = () => garden.centre().y + rb() * (turned ? 1 : 0.866);
+      if (portraitScreen) {
+        const slide = bottom - bedBottom();
+        if (slide > 0.5) garden.layout(12, TOP_HUD + slide, bw, bh);
+      }
+      const c = garden.centre();
+      hud.setBed({
+        x: c.x,
+        top: garden.bedTop().y,
+        bottom: bedBottom(),
+        s: garden.s,
+        gear: portraitScreen && turned ? gearSpot(c, rb(), garden.s, w) : null,
+      });
     }
     scene.resize(w, h, garden.s);
   };
@@ -49,41 +83,62 @@ async function boot(): Promise<void> {
     tw.tick(dt);
     garden.tick(dt);
     scene.tick(dt);
+    // Sheets: the board eases to alpha 0.4 and scale 0.94 over 300 ms about the bed's centre.
+    const want = sheetOpen ? 1 : 0;
+    if (dim !== want) dim = REDUCED_MOTION ? want : Math.max(0, Math.min(1, dim + Math.sign(want - dim) * (dt / DIM_MS)));
+    if ((dim > 0 || appliedDim > 0) && garden.board) {
+      appliedDim = dim;
+      const c = dim > 0 ? garden.centre() : { x: 0, y: 0 };
+      for (const layer of [boardLayer, overlayLayer]) {
+        layer.pivot.set(c.x, c.y);
+        layer.position.set(c.x, c.y);
+        layer.alpha = 1 - (1 - SHEET_ALPHA) * dim;
+        layer.scale.set(1 - (1 - SHEET_SCALE) * dim);
+      }
+    }
   });
 
-  const soundBtn = document.getElementById('btn-sound')!;
+  // Sound: a switch in the settings sheet, saved as `bloom.muted`.
   try {
-    if (localStorage.getItem('bloom.muted') === '1') {
-      synth.setMuted(true);
-      soundBtn.classList.add('muted');
-    }
+    if (localStorage.getItem('bloom.muted') === '1') synth.setMuted(true);
   } catch {
     /* storage unavailable */
   }
-  soundBtn.addEventListener('click', () => {
-    synth.unlock();
+  hud.setSound(!synth.muted);
+  const button = (id: string, fn: () => void) =>
+    document.getElementById(id)!.addEventListener('click', () => {
+      synth.unlock();
+      fn();
+    });
+  button('btn-sound', () => {
     synth.setMuted(!synth.muted);
-    soundBtn.classList.toggle('muted', synth.muted);
+    hud.setSound(!synth.muted);
     try {
       localStorage.setItem('bloom.muted', synth.muted ? '1' : '0');
     } catch {
       /* storage unavailable */
     }
   });
-  const button = (id: string, fn: () => void) =>
-    document.getElementById(id)!.addEventListener('click', () => {
-      synth.unlock();
-      fn();
-    });
+  button('btn-settings', () => hud.showSettings());
+  button('btn-back', () => hud.closeSheets());
+  button('btn-howto-back', () => hud.closeSheets());
   button('btn-help', () => hud.showHowto());
-  button('btn-back', () => hud.hideHowto());
   button('btn-tutorial', () => game.startTutorial());
   button('btn-new', () => game.newRun());
   button('btn-again', () => game.newRun());
+  // A tap on the dimmed board above a sheet, or Escape, goes back to the garden.
+  for (const id of ['settings', 'howto']) {
+    document.getElementById(id)!.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) hud.closeSheets();
+    });
+  }
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hud.closeSheets();
+  });
   const fullBtn = document.getElementById('btn-full')!;
-  if (!document.fullscreenEnabled || matchMedia('(pointer: coarse)').matches) fullBtn.style.display = 'none';
+  if (!document.fullscreenEnabled || matchMedia('(pointer: coarse)').matches) fullBtn.hidden = true;
   button('btn-full', () => {
-    hud.hideHowto();
+    hud.closeSheets();
     if (document.fullscreenElement) void document.exitFullscreen();
     else void document.documentElement.requestFullscreen().catch(() => {});
   });

@@ -27,34 +27,35 @@
       </div>
       <div class="title" id="title">Bloom</div>
       <div class="coach" id="coach"><div class="steps" id="coach-steps"></div><p id="coach-text"></p></div>
-      <div class="chain" id="chain">×0</div>
+      <div class="chain" id="chain"><span class="num" id="chain-num"></span><span class="label">chain</span></div>
       <div class="lit" id="lit"><p>Garden lit</p><div class="lit-stars" id="lit-stars"></div></div>
       <div class="toast" id="toast"></div>
-      <div class="bottom">
-        <button id="btn-sound" class="glass" aria-label="Sound on or off" title="Sound">
-          <svg viewBox="0 0 24 24" class="on"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" /></svg>
-          <svg viewBox="0 0 24 24" class="off"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="m16.5 9.5 5 5m0-5-5 5" /></svg>
-        </button>
-        <button id="btn-help" class="glass" aria-label="How to play" title="How to play">
-          <svg viewBox="0 0 24 24"><path d="M9.4 9.2a2.7 2.7 0 1 1 3.7 2.5c-.7.3-1.1.9-1.1 1.6v.7" /><circle cx="12" cy="17.4" r=".7" fill="currentColor" stroke="none" /></svg>
-        </button>
+      <button id="btn-settings" class="glass gear" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.8 10.4 L21.1 10.8 L21.1 13.2 L18.8 13.6 L18.0 15.7 L19.3 17.6 L17.6 19.3 L15.7 18.0 L13.6 18.8 L13.2 21.1 L10.8 21.1 L10.4 18.8 L8.3 18.0 L6.4 19.3 L4.7 17.6 L6.0 15.7 L5.2 13.6 L2.9 13.2 L2.9 10.8 L5.2 10.4 L6.0 8.3 L4.7 6.4 L6.4 4.7 L8.3 6.0 L10.4 5.2 L10.8 2.9 L13.2 2.9 L13.6 5.2 L15.7 6.0 L17.6 4.7 L19.3 6.4 L18.0 8.3Z" /><circle cx="12" cy="12" r="3" /></svg>
+      </button>
+      <div class="sheet menu hidden" id="settings">
+        <div class="sheet-body">
+          <div class="rows">
+            <button id="btn-sound" class="row" role="switch" aria-checked="true"><span>Sound</span><span class="switch"><i></i></span></button>
+            <button id="btn-help" class="row">How to play</button>
+            <button id="btn-tutorial" class="row">Replay the tutorial</button>
+            <button id="btn-new" class="row">New garden</button>
+            <button id="btn-full" class="row">Full screen</button>
+          </div>
+          <button id="btn-back" class="pill">Back to the garden</button>
+        </div>
       </div>
-      <div class="sheet hidden" id="howto">
+      <div class="sheet menu hidden" id="howto">
         <div class="sheet-body">
           <h2>How to play</h2>
           <ol>
-            <li>Bloom all 3 lanterns to light the garden.</li>
             <li>Tap a bud: +1 petal. Costs a drop.</li>
-            <li>At 4 petals it blooms and sends petals along its arrows.</li>
-            <li>Long chains score more and give drops back.</li>
-            <li>Hold or hover a bud to see where its petals go.</li>
+            <li>At 4 petals it blooms along its arrows.</li>
+            <li>Bloom all 3 lanterns to light the garden.</li>
+            <li>Spare drops are stars. Long chains refund drops.</li>
+            <li>Hold or hover a bud to see its path.</li>
           </ol>
-          <button id="btn-back" class="pill">Back to the garden</button>
-          <div class="links">
-            <button id="btn-tutorial" class="link">Replay the tutorial</button>
-            <button id="btn-new" class="link">New garden</button>
-            <button id="btn-full" class="link">Full screen</button>
-          </div>
+          <button id="btn-howto-back" class="pill">Back to the garden</button>
         </div>
       </div>
       <div class="sheet hidden" id="summary">

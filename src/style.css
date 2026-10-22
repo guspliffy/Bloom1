@@ -9,6 +9,7 @@
   --serif: 'Fraunces', 'Iowan Old Style', Georgia, serif;
   --sans: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --bed-top: 30vh;
+  --bed-bottom: 80vh;
   color-scheme: dark;
 }
 * {
@@ -37,6 +38,13 @@ canvas {
   inset: 0;
   display: block;
   touch-action: none;
+  /* Title moment: the scene fades in over 600 ms. */
+  animation: scene-in 0.6s ease-out;
+}
+@keyframes scene-in {
+  from {
+    opacity: 0;
+  }
 }
 #hud {
   position: fixed;
@@ -44,7 +52,7 @@ canvas {
   pointer-events: none;
   padding: max(14px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
 }
-#hud .bottom button,
+#hud .gear,
 #hud .sheet:not(.hidden) button {
   pointer-events: auto;
 }
@@ -163,20 +171,18 @@ canvas {
 }
 
 /* Title moment and chain count: Fraunces above the bed. */
-.title,
-.chain {
+.title {
   position: fixed;
   left: 0;
   right: 0;
+  top: var(--title-top, calc(var(--bed-top) - 78px));
   text-align: center;
   font-family: var(--serif);
   color: var(--cream);
   pointer-events: none;
-}
-.title {
-  top: calc(var(--bed-top) - 78px);
   font-weight: 300;
-  font-size: 52px;
+  font-size: var(--title-size, 52px);
+  line-height: 1.1;
   letter-spacing: 0.12em;
   opacity: 0;
   transition: opacity 0.9s ease;
@@ -185,43 +191,77 @@ canvas {
 .title.show {
   opacity: 0.9;
 }
+/* The chain count follows the latest bloom (position set from script); the pop is on the inner number. */
 .chain {
-  top: calc(var(--bed-top) - 74px);
-  font-weight: 500;
-  font-style: italic;
-  font-size: 56px;
-  font-variant-numeric: tabular-nums;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: max-content;
+  text-align: center;
+  font-family: var(--serif);
   color: var(--chain-color, var(--cream));
+  pointer-events: none;
   opacity: 0;
-  transform: scale(0.96);
-  /* Back ease: each new bloom pops the count to 1.18 and it settles. */
-  transition: opacity 0.6s, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s, font-size 0.3s;
+  transition: opacity 0.4s, transform 0.12s ease-out;
+}
+.chain.snap {
+  transition: opacity 0.4s;
 }
 .chain.show {
   opacity: 0.9;
-  transform: scale(1);
 }
-.chain.bump {
+.chain .num {
+  display: block;
+  font-weight: 500;
+  font-style: italic;
+  font-size: 44px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  /* Back ease: each new bloom pops the count to 1.18 and it settles. */
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chain.bump .num {
   transform: scale(1.18);
   transition: none;
 }
-.chain.long {
+.chain.long .num {
   text-shadow: 0 0 18px var(--chain-color, var(--cream));
 }
-.chain.finale {
-  font-size: 64px;
+.chain.finale .num {
+  font-size: 52px;
+}
+.chain .label {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  margin-top: 2px;
+  font-family: var(--sans);
+  font-style: normal;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.chain.settled .label {
+  opacity: 0.6;
 }
 
 /* Tutorial coach: seed dots and a pill. */
 .coach {
   position: fixed;
-  top: max(18px, env(safe-area-inset-top));
+  /* Attached to the bed: dots (14) + gap (10) + pill (40) = 64 px, ending at the bed's top edge. */
+  top: max(12px, calc(var(--bed-top) - 64px));
   left: 0;
   right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
+  pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s;
 }
@@ -294,11 +334,14 @@ canvas {
   transform: translateY(-4px);
 }
 
+/* The toast sits under the bed, centred, and keeps clear of the corner button. */
 .toast {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(max(14px, env(safe-area-inset-bottom)) + 14px);
+  top: min(calc(var(--bed-bottom) + 20px), calc(100% - 56px));
+  max-width: calc(100% - 150px);
+  margin: 0 auto;
   text-align: center;
   font-size: 15px;
   font-weight: 600;
@@ -309,14 +352,28 @@ canvas {
 .toast.show {
   opacity: 0.7;
 }
+.sheet-open .toast.show {
+  opacity: 0;
+}
 
 /* Glass buttons. */
-.bottom {
+.gear {
   position: fixed;
   right: max(18px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
-  display: flex;
-  gap: 12px;
+}
+/* Portrait: the button sits on the planter's rim, so it belongs to the object (position from script). */
+.rim .gear {
+  right: auto;
+  bottom: auto;
+  left: var(--gear-x);
+  top: var(--gear-y);
+  margin: -22px 0 0 -22px;
+}
+.sheet-open .gear,
+.resting .gear {
+  opacity: 0;
+  pointer-events: none !important;
 }
 button {
   font: inherit;
@@ -335,7 +392,7 @@ button {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--ink);
-  opacity: 0.4;
+  opacity: 0.7;
   transition: opacity 0.2s, transform 0.12s;
 }
 .glass:hover,
@@ -354,13 +411,6 @@ button {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-#btn-sound .off,
-#btn-sound.muted .on {
-  display: none;
-}
-#btn-sound.muted .off {
-  display: block;
-}
 
 /* Bottom sheets: the garden stays visible above. */
 .sheet {
@@ -372,6 +422,56 @@ button {
   background: linear-gradient(to bottom, rgba(12, 10, 28, 0) 40%, rgba(12, 10, 28, 0.6) 62%, var(--sheet) 80%);
   transition: opacity 0.4s ease-out;
   pointer-events: auto;
+}
+/* Settings and How to play: transparent at 25% of the height, no border. */
+.sheet.menu {
+  background: linear-gradient(to bottom, rgba(12, 10, 28, 0) 25%, rgba(12, 10, 28, 0.55) 50%, var(--sheet) 72%);
+}
+.sheet.menu .sheet-body {
+  width: min(100%, 440px);
+}
+.rows {
+  width: 100%;
+  margin-bottom: 14px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 48px;
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--ink);
+  text-align: left;
+}
+.row:hover {
+  color: #fff;
+}
+.row[hidden] {
+  display: none;
+}
+.switch {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  transition: transform 0.18s ease-out, background 0.18s;
+}
+[aria-checked='true'] .switch i {
+  transform: translateX(18px);
+  background: var(--drop);
 }
 .sheet.hidden {
   opacity: 0;
@@ -409,6 +509,7 @@ button {
 .sheet ol {
   list-style: none;
   margin: 0 0 22px;
+  width: 100%;
   padding: 0;
   font-size: 17px;
   line-height: 1.45;
@@ -475,13 +576,6 @@ button {
 .pill:active {
   transform: scale(0.97);
 }
-.links {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 4px 22px;
-  margin-top: 16px;
-}
 .link {
   font-weight: 600;
   font-size: 15px;
@@ -500,8 +594,12 @@ button {
 }
 @media (prefers-reduced-motion: reduce) {
   .sheet-body,
-  .chain {
+  .chain,
+  .chain .num {
     transition: none;
+  }
+  canvas {
+    animation: none;
   }
 }
 
@@ -510,7 +608,7 @@ button {
   position: fixed;
   left: 0;
   right: 0;
-  top: max(60px, calc(var(--bed-top) - 100px));
+  top: max(12px, calc(var(--bed-top) - 64px));
   display: flex;
   flex-direction: column;
   align-items: center;

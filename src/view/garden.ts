@@ -76,7 +76,7 @@ export class GardenView extends Container {
   private previewG = new Graphics();
   private preview: PreviewPlan | null = null;
   private previewSet = new Set<number>();
-  private press: { id: number; cell: number; touch: boolean; x: number; y: number; held: boolean; timer: number } | null = null;
+  private press: { id: number; cell: number; touch: boolean; x: number; y: number; held: boolean; early: boolean; timer: number } | null = null;
   private hoverTimer = 0;
 
   constructor(
@@ -105,12 +105,19 @@ export class GardenView extends Container {
   private pointerDown(i: number, e: FederatedPointerEvent): void {
     if (this.press) return;
     const touch = e.pointerType !== 'mouse';
-    this.press = { id: e.pointerId, cell: i, touch, x: e.global.x, y: e.global.y, held: false, timer: 0 };
+    this.press = { id: e.pointerId, cell: i, touch, x: e.global.x, y: e.global.y, held: false, early: false, timer: 0 };
     if (touch) {
+      // A ready bud previews the moment it is pressed (its chain is the thing to read), but a quick
+      // release still taps: `early` shows the preview without committing to the hold that cancels it.
+      const v = this.buds[i];
+      if (v.ready && v.anim !== 'grow') {
+        this.showPreview(i);
+        this.press.early = this.preview?.cell === i;
+      }
       this.press.timer = window.setTimeout(() => {
         if (!this.press) return;
         this.press.held = true;
-        this.showPreview(this.press.cell);
+        if (this.preview?.cell !== this.press.cell) this.showPreview(this.press.cell);
       }, tuning.preview.holdMs);
     }
   }
@@ -172,6 +179,7 @@ export class GardenView extends Container {
     this.preview = plan;
     this.previewSet.clear();
     const g = this.previewG.clear();
+    this.previewG.alpha = 0;
     if (!plan) return;
     const v = this.buds[plan.cell];
     this.previewSet.add(plan.cell);
@@ -181,10 +189,20 @@ export class GardenView extends Container {
     }
     const s = this.s;
     const ink = palette.hint;
+    // Buds that would bloom: a thin flower outline (scalloped, six lobes) in the first bloom hue.
     for (const c of plan.blooms) {
       this.previewSet.add(c);
       const b = this.buds[c];
-      g.circle(b.x, b.y, s * 0.78).stroke({ width: 2, color: palette.petalReady, alpha: 0.85 });
+      const r = s * 0.5;
+      for (let k = 0; k <= 48; k++) {
+        const a = (k / 48) * Math.PI * 2;
+        const rr = r * (1 + 0.22 * Math.cos(a * 6));
+        const px = b.x + Math.cos(a) * rr;
+        const py = b.y + Math.sin(a) * rr;
+        if (k === 0) g.moveTo(px, py);
+        else g.lineTo(px, py);
+      }
+      g.closePath().stroke({ width: 1.5, color: palette.bloom[0], alpha: 0.9 });
     }
     for (const tr of plan.transfers) {
       const path = this.flightPath(tr.from, tr.dir, tr.to);
@@ -196,7 +214,8 @@ export class GardenView extends Container {
       if (tr.landed) {
         this.previewSet.add(tr.to);
         const t = this.buds[tr.to];
-        g.circle(t.x, t.y, s * 0.12).fill({ color: ink, alpha: 0.5 });
+        // Cream ring on every bud a petal would land on (normal blend: preview rings cost no light, GDD §6).
+        g.circle(t.x, t.y, s * 0.7).stroke({ width: 2, color: palette.hint, alpha: 1 });
       } else {
         // A petal that would be lost: a short drop and a faint mark where it falls.
         const end = path(1);
@@ -394,6 +413,8 @@ export class GardenView extends Container {
     const t = this.time;
     const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 * f.readyPulseHz);
     const k = Math.min(1, dtMs / 120);
+    // Preview marks fade in over the same 120 ms (GDD §4).
+    if (this.previewG.alpha < 1) this.previewG.alpha = Math.min(1, this.previewG.alpha + k);
     // Light budget: with many ready buds every ready halo dims by fullCount/n, never below the floor.
     const L = tuning.light;
     let readyCount = 0;
@@ -430,14 +451,15 @@ export class GardenView extends Container {
       const previewed = !v.isOpen && this.preview?.cell === i;
       const hover = !ready && previewed;
       // Under a finger the chevrons reach out from beneath it: full alpha and heldArrowScale (touch only).
-      const held = previewed && !!this.press?.touch && this.press.held;
+      const held = previewed && !!this.press?.touch && (this.press.held || this.press.early);
       v.heldArrow += ((held ? 1 : 0) - v.heldArrow) * Math.min(1, dtMs / Math.max(1, f.arrowRevealMs));
-      const target = held ? 1 : ready ? 0.9 : hover ? 0.85 : 0;
+      const target = held ? 1 : ready || hover ? 0.9 : 0;
       const rate = target > v.arrowsG.alpha ? (ready ? 180 : f.arrowRevealMs) : 200;
       const step = (dtMs / Math.max(1, rate)) * Math.max(target, 0.4);
       v.arrowsG.alpha = target > v.arrowsG.alpha ? Math.min(target, v.arrowsG.alpha + step) : Math.max(target, v.arrowsG.alpha - step);
-      if (ready) v.arrowsG.tint = palette.petalReady;
-      else if (hover) v.arrowsG.tint = palette.arrow;
+      // The pressed bud's chevrons go bright (near white); other ready buds keep their warm tint.
+      if (previewed) v.arrowsG.tint = palette.arrow;
+      else if (ready) v.arrowsG.tint = palette.petalReady;
       const baseScale = hinted && this.highlightArrows ? 1 + 0.12 * pulse : ready ? 1 + f.readyBreathe * pulse : 1;
       v.arrowsG.scale.set(baseScale * (1 + (tuning.preview.heldArrowScale - 1) * v.heldArrow));
     }

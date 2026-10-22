@@ -58,7 +58,65 @@ export function summaryView(s: Summary): SummaryView {
   };
 }
 
-/** DOM overlay: drop pips, pollen counter, chain count, title, coach, toasts and the bottom sheets. */
+/** Layout numbers from the GDD (§7 Layout, Title moment): presentation px, not gameplay tuning. */
+const TITLE_TOP_MIN = 60;
+const TITLE_SMALL_BED_TOP = 110;
+const CHAIN_LIFT = 1.4;
+const COACH_BLOCK = 64;
+const VIEW_MARGIN = 12;
+const GEAR_R = 22;
+
+/** Where "Bloom" goes: its bottom at bed-top − 1.2s, never above 60 px from the top, 40 px type when the bed top is tight. */
+export function titlePlacement(bedTop: number, s: number): { top: number; size: number } {
+  const size = bedTop < TITLE_SMALL_BED_TOP ? 40 : 52;
+  return { top: Math.max(TITLE_TOP_MIN, bedTop - 1.2 * s - size * 1.1), size };
+}
+
+/**
+ * Bottom-centre of the chain count: 1.4s above the latest bloom, or with no bloom point (reduced
+ * motion) fixed above the bed at the coach spot. Clamped 12 px inside the viewport.
+ */
+export function chainSpot(
+  bloom: { x: number; y: number } | null,
+  bed: { x: number; top: number },
+  s: number,
+  size: { w: number; h: number },
+  vw: number,
+): { x: number; y: number } {
+  const rawX = bloom ? bloom.x : bed.x;
+  const rawY = bloom ? bloom.y - CHAIN_LIFT * s : bed.top - COACH_BLOCK + size.h;
+  const lo = VIEW_MARGIN + size.w / 2;
+  const hi = vw - VIEW_MARGIN - size.w / 2;
+  return { x: hi < lo ? vw / 2 : Math.min(hi, Math.max(lo, rawX)), y: Math.max(VIEW_MARGIN + size.h, rawY) };
+}
+
+/**
+ * Centre of the settings button on the planter's rim, bottom-right, for a board turned 30° (corners
+ * straight up and down): the middle of the lower-right edge, a touch outside it. `c` is the bed centre,
+ * `rb` its corner radius, `s` the hex radius. Kept fully on screen.
+ */
+export function gearSpot(c: { x: number; y: number }, rb: number, s: number, vw: number): { x: number; y: number } {
+  const d = 0.866 * rb + 0.2 * s;
+  const a = Math.PI / 3;
+  return { x: Math.min(vw - VIEW_MARGIN - GEAR_R - 6, c.x + d * Math.cos(a)), y: c.y + d * Math.sin(a) };
+}
+
+/** The one-time preview line after a run tap (GDD §7): hover on a mouse, hold on touch. */
+export function previewHint(fine: boolean): string {
+  return fine ? 'Hover a bud to see its path.' : 'Hold a bud to see its path.';
+}
+
+/** The bed's place on screen, for everything that speaks (GDD §7 Layout). */
+export interface BedFrame {
+  x: number;
+  top: number;
+  bottom: number;
+  s: number;
+  /** Settings button centre when it rides the planter rim (portrait), else null: bottom-right corner. */
+  gear: { x: number; y: number } | null;
+}
+
+/** DOM overlay: drop pips, pollen counter, chain count, title, coach, toasts, the settings button and its sheets. */
 export class Hud {
   private hud = $('hud');
   private pips = $('drops');
@@ -72,6 +130,8 @@ export class Hud {
   private toastEl = $('toast');
   private summary = $('summary');
   private howto = $('howto');
+  private settings = $('settings');
+  private chainNum = $('chain-num');
   private coachEl = $('coach');
   private coachText = $('coach-text');
   private coachSteps = $('coach-steps');
@@ -81,14 +141,32 @@ export class Hud {
   private chainHide = 0;
   private toastHide = 0;
   private titleHide = 0;
+  private titleUp = false;
+  private pendingCoach: { text: string; step: number; total: number } | null = null;
+  private coachTimer = 0;
+  private bed: BedFrame = { x: 0, top: 0, bottom: 0, s: 40, gear: null };
+  private sheetWasOpen = false;
+  /** Called when the settings or How to play sheet opens or closes (the board dims and scales). */
+  onSheet: ((open: boolean) => void) | null = null;
 
   setStatsVisible(v: boolean): void {
     this.hud.classList.toggle('hide-stats', !v);
   }
 
-  /** Pixel y of the bed's top edge, so the title and chain count sit just above it. */
-  setBedTop(y: number): void {
-    document.documentElement.style.setProperty('--bed-top', `${Math.round(y)}px`);
+  /** Where the bed is: the coach pill, chain count and stars sit above it, the toast below, the title above that. */
+  setBed(b: BedFrame): void {
+    this.bed = b;
+    const root = document.documentElement;
+    root.style.setProperty('--bed-top', `${Math.round(b.top)}px`);
+    root.style.setProperty('--bed-bottom', `${Math.round(b.bottom)}px`);
+    root.classList.toggle('rim', !!b.gear);
+    if (b.gear) {
+      root.style.setProperty('--gear-x', `${Math.round(b.gear.x)}px`);
+      root.style.setProperty('--gear-y', `${Math.round(b.gear.y)}px`);
+    }
+    const t = titlePlacement(b.top, b.s);
+    root.style.setProperty('--title-top', `${Math.round(t.top)}px`);
+    root.style.setProperty('--title-size', `${t.size}px`);
   }
 
   /** Redraw the pip row for n drops. */
@@ -190,32 +268,61 @@ export class Hud {
     return this.shownPollen;
   }
 
-  /** Chain count "×n", shown from the third bloom of a chain, in the latest flower's colour; it glows and grows on long chains. */
-  setChain(n: number, color = '#ffe9c4'): void {
+  /**
+   * Chain count: the plain number from the third bloom, in the latest flower's colour, glowing and
+   * growing on long chains. It eases to `at` (the latest bloom, screen coords) in 120 ms; with no `at`
+   * (reduced motion) it stays fixed above the bed.
+   */
+  setChain(n: number, color = '#ffe9c4', at?: { x: number; y: number }): void {
     clearTimeout(this.chainHide);
     if (n < 3) return;
-    this.chain.textContent = `×${n}`;
-    this.chain.style.setProperty('--chain-color', color);
-    this.chain.classList.toggle('long', n >= tuning.feel.holdBreathChain);
-    this.chain.classList.toggle('finale', n >= tuning.audio.finaleChain);
-    this.chain.classList.add('show', 'bump');
-    requestAnimationFrame(() => requestAnimationFrame(() => this.chain.classList.remove('bump')));
+    const el = this.chain;
+    const first = !el.classList.contains('show');
+    this.chainNum.textContent = String(n);
+    el.style.setProperty('--chain-color', color);
+    el.classList.toggle('long', n >= tuning.feel.holdBreathChain);
+    el.classList.toggle('finale', n >= tuning.audio.finaleChain);
+    el.classList.remove('settled');
+    const p = chainSpot(at ?? null, this.bed, this.bed.s, { w: el.offsetWidth, h: el.offsetHeight }, window.innerWidth);
+    // A fresh count appears where it belongs instead of sliding in from the last chain's spot.
+    if (first) el.classList.add('snap');
+    el.style.transform = `translate(${Math.round(p.x - el.offsetWidth / 2)}px, ${Math.round(p.y - el.offsetHeight)}px)`;
+    if (first) {
+      void el.offsetWidth;
+      el.classList.remove('snap');
+    }
+    el.classList.add('show', 'bump');
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('bump')));
   }
 
+  /** The chain settled: the "chain" label appears, and `feel.chainCountFadeMs` later both fade. */
   endChain(): void {
     clearTimeout(this.chainHide);
-    this.chainHide = window.setTimeout(() => this.chain.classList.remove('show'), 600);
+    if (!this.chain.classList.contains('show')) return;
+    this.chain.classList.add('settled');
+    this.chainHide = window.setTimeout(() => this.chain.classList.remove('show'), tuning.feel.chainCountFadeMs);
+  }
+
+  /** At once, for a new garden. */
+  hideChain(): void {
+    clearTimeout(this.chainHide);
+    this.chain.classList.remove('show', 'settled');
   }
 
   showTitle(): void {
+    this.titleUp = true;
     this.title.classList.add('show');
     clearTimeout(this.titleHide);
     this.titleHide = window.setTimeout(() => this.hideTitle(), tuning.feel.titleMs + 900);
   }
 
+  /** Title fades; a coach line held back behind it fades in once the title is on its way out. */
   hideTitle(): void {
     clearTimeout(this.titleHide);
     this.title.classList.remove('show');
+    if (!this.titleUp) return;
+    this.titleUp = false;
+    if (this.pendingCoach) this.coachTimer = window.setTimeout(() => this.flushCoach(), 450);
   }
 
   toast(text: string, ms = tuning.feel.toastMs): void {
@@ -275,8 +382,23 @@ export class Hud {
     this.summary.classList.add('hidden');
   }
 
-  /** Tutorial coach line at the top, with seed dots that bloom as lessons pass. */
+  /** Tutorial coach line above the bed, with seed dots that bloom as lessons pass. Held back while the title is up. */
   coach(text: string, step: number, total: number): void {
+    if (this.titleUp || this.coachTimer) {
+      this.pendingCoach = { text, step, total };
+      return;
+    }
+    this.applyCoach(text, step, total);
+  }
+
+  private flushCoach(): void {
+    this.coachTimer = 0;
+    const c = this.pendingCoach;
+    this.pendingCoach = null;
+    if (c) this.applyCoach(c.text, c.step, c.total);
+  }
+
+  private applyCoach(text: string, step: number, total: number): void {
     if (this.coachSteps.children.length !== total) this.coachSteps.innerHTML = Array.from({ length: total }, () => `<i>${BLOOM_SVG}</i>`).join('');
     [...this.coachSteps.children].forEach((el, i) => (el.className = i < step ? 'done' : i === step ? 'now' : ''));
     this.coachEl.classList.add('show');
@@ -289,19 +411,46 @@ export class Hud {
   }
 
   hideCoach(): void {
+    clearTimeout(this.coachTimer);
+    this.coachTimer = 0;
+    this.pendingCoach = null;
     this.coachEl.classList.remove('show');
     this.coachText.textContent = '';
   }
 
-  showHowto(): void {
-    this.howto.classList.remove('hidden');
-  }
-
-  hideHowto(): void {
+  showSettings(): void {
     this.howto.classList.add('hidden');
+    this.settings.classList.remove('hidden');
+    this.sheetChanged();
   }
 
-  get howtoOpen(): boolean {
-    return !this.howto.classList.contains('hidden');
+  showHowto(): void {
+    this.settings.classList.add('hidden');
+    this.howto.classList.remove('hidden');
+    this.sheetChanged();
+  }
+
+  closeSheets(): void {
+    this.settings.classList.add('hidden');
+    this.howto.classList.add('hidden');
+    this.sheetChanged();
+  }
+
+  get sheetOpen(): boolean {
+    return !this.settings.classList.contains('hidden') || !this.howto.classList.contains('hidden');
+  }
+
+  /** The Sound switch in the settings sheet. */
+  setSound(on: boolean): void {
+    $('btn-sound').setAttribute('aria-checked', String(on));
+  }
+
+  /** A sheet hides any toast and dims the board (the end sheet is separate: it keeps its own board dim). */
+  private sheetChanged(): void {
+    const open = this.sheetOpen;
+    this.hud.classList.toggle('sheet-open', open);
+    if (open === this.sheetWasOpen) return;
+    this.sheetWasOpen = open;
+    this.onSheet?.(open);
   }
 }

@@ -148,8 +148,9 @@ export class Scene {
     this.hedgeNear.texture = hedgeTexture('near', w + 80, nearH, [unit * 1.2, unit * 3], unit * 1.4, 19);
     this.hedgeNear.position.set(w / 2, hz + unit * 1.2);
 
-    const leafCount = portrait ? 3 : 4;
-    const leafLen = unit * (portrait ? 4.2 : 5);
+    // Portrait has no foreground leaves: against the turned board they read as smudges (GDD §6).
+    const leafCount = portrait ? 0 : 4;
+    const leafLen = unit * 5;
     const spots = [
       { x: -unit * 0.4, y: h + unit * 0.2, rot: -0.75 },
       { x: -unit * 0.8, y: h - unit * 1.6, rot: -0.35 },
